@@ -777,8 +777,8 @@ jobs:
     - name: Download Web Files
       uses: actions/download-artifact@v3
       with:
-        name: Web.zip
-        path: Web
+        name: web
+        path: web
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3.0.0
     - name: Set up Docker Buildx

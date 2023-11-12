@@ -1,4 +1,4 @@
 FROM nginx:stable-alpine
 WORKDIR /build
-COPY ./Web /usr/share/nginx/html
+COPY ./web /usr/share/nginx/html
 EXPOSE 80
