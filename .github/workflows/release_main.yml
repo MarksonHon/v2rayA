@@ -733,7 +733,7 @@ jobs:
         IMAGE="mzz2017/v2raya"
         echo image=${IMAGE} >> $GITHUB_OUTPUT
         echo tag=${TAG} >> $GITHUB_OUTPUT
-        echo tag=${TAG} > ./version
+        sed -i "s|${TAG}|Realv2rayAVersion|g" install/docker/docker_helper.sh
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3.0.0
     - name: Set up Docker Buildx
