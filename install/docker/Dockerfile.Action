@@ -5,6 +5,7 @@ RUN git describe --abbrev=0 --tags | tee ./version
 
 FROM alpine:latest AS builder
 COPY ./install/docker/docker_helper.sh ./docker_helper.sh
+COPY ./version ./version
 RUN sh -c "$(cat ./docker_helper.sh)"
 RUN apk add --no-cache iptables ip6tables nftables
 RUN rm ./docker_helper.sh

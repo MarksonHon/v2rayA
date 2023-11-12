@@ -725,7 +725,6 @@ jobs:
     - name: Check Version
       id: prep
       run: |
-        echo "P_DIR=$(pwd)" >> $GITHUB_OUTPUT
         tag=$(git describe --tags $(git rev-list --tags --max-count=1))
         version=${tag:1}
         echo "VERSION=$version" >> $GITHUB_OUTPUT
@@ -734,6 +733,7 @@ jobs:
         IMAGE="mzz2017/v2raya"
         echo image=${IMAGE} >> $GITHUB_OUTPUT
         echo tag=${TAG} >> $GITHUB_OUTPUT
+        echo tag=${TAG} > ./version
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3.0.0
     - name: Set up Docker Buildx
