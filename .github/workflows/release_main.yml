@@ -733,7 +733,6 @@ jobs:
         TAG=$(echo $GITHUB_REF | cut -d / -f 3)
         IMAGE="mzz2017/v2raya"
         echo image=${IMAGE} >> $GITHUB_OUTPUT
-        echo tag=${TAG:1} >> $GITHUB_OUTPUT
     - name: Download Artifact Linux x64
       uses: actions/download-artifact@v3
       with:
@@ -758,19 +757,4 @@ jobs:
     #   with:
     #     username: ${{ secrets.DOCKER_USERNAME }}
     #     password: ${{ secrets.DOCKER_PASSWORD }}
-    - name: Build Docker Images
-      shell: bash
-      run: |
-        Current_Path=$(pwd)
-        mkdir build_docker && cd build_docker && mkdir build
-        cp $Current_Path/install/docker/Dockerfile.Action Dockerfile.Action_x64
-        sed -i "s|Real_v2rayA_PATH|$Current_Path/Downloads/v2raya_linux_x64_${{ steps.prep.outputs.VERSION }}|g" Dockerfile.Action_x64
-        cp $Current_Path/install/docker/Dockerfile.Action Dockerfile.Action_arm64
-        docker buildx build --platform linux/amd64 -f Dockerfile.Action_x64 -t $IMAGE:$TAG_x64 ./build
-        sed -i "s|Real_v2rayA_PATH|$Current_Path/Downloads/v2raya_linux_arm64_${{ steps.prep.outputs.VERSION }}|g" Dockerfile.Action_arm64
-        docker buildx build --platform linux/arm64 -f Dockerfile.Action_arm64 -t $IMAGE:$TAG_arm64 ./build
-        cp $Current_Path/install/docker/Dockerfile.Action Dockerfile.Action_armv7
-        sed -i "s|Real_v2rayA_PATH|$Current_Path/Downloads/v2raya_linux_armv7_${{ steps.prep.outputs.VERSION }}|g" Dockerfile.Action_armv7
-        docker buildx build --platform linux/arm/v7 -f Dockerfile.Action_armv7 -t $IMAGE:$TAG_armv7 ./build
-        docker manifest create $IMAGE:$TAG $IMAGE:$TAG_x64 $IMAGE:$TAG_arm64 $IMAGE:$TAG_armv7
-        # docker manifest push $IMAGE:$TAG
+
