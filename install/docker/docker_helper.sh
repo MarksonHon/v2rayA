@@ -1,7 +1,7 @@
 #!/bin/sh
 set -x
 current_dir=$(pwd)
-mkdir $tmp/cache && cd $tmp/cache
+mkdir "$current_dir"/cache && cd "$current_dir"/cache || exit
 case "$(arch)" in
     x86_64)
         v2ray_arch="64"
@@ -31,4 +31,4 @@ mkdir /usr/local/share/v2raya
 ln -s /usr/local/share/v2ray /usr/local/share/v2raya
 ln -s /usr/local/share/xray /usr/local/share/v2raya
 wget -O /usr/local/share/v2ray/LoyalsoldierSite.dat https://raw.githubusercontent.com/mzz2017/dist-v2ray-rules-dat/master/geosite.dat
-cd $current_dir && rm -rf $tmp/cache
+cd "$current_dir" && rm -rf "$current_dir"/cache
