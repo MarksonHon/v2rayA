@@ -716,7 +716,7 @@ jobs:
           v2raya-aarch64-macos.zip v2raya-aarch64-macos.zip.sha256.txt
   Release_to_Docker:
     runs-on: ubuntu-22.04
-    needs: [Build_v2rayA_Binaries]
+    needs: [GitHub_Release]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
     - uses: actions/checkout@v3
@@ -733,21 +733,7 @@ jobs:
         TAG=$(echo $GITHUB_REF | cut -d / -f 3)
         IMAGE="mzz2017/v2raya"
         echo image=${IMAGE} >> $GITHUB_OUTPUT
-    - name: Download Artifact Linux x64
-      uses: actions/download-artifact@v3
-      with:
-        name: v2raya_linux_x64_${{ steps.prep.outputs.VERSION }}
-        path: Downloads
-    - name: Download Artifact Linux arm64
-      uses: actions/download-artifact@v3
-      with:
-        name: v2raya_linux_arm64_${{ steps.prep.outputs.VERSION }}
-        path: Downloads
-    - name: Download Artifact Linux armv7
-      uses: actions/download-artifact@v3
-      with:
-        name: v2raya_linux_armv7_${{ steps.prep.outputs.VERSION }}
-        path: Downloads
+        echo tag=${TAG} >> $GITHUB_OUTPUT
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3.0.0
     - name: Set up Docker Buildx
@@ -757,4 +743,17 @@ jobs:
     #   with:
     #     username: ${{ secrets.DOCKER_USERNAME }}
     #     password: ${{ secrets.DOCKER_PASSWORD }}
+    - name: Build and push
+      uses: docker/build-push-action@v3.0.0
+      with:
+        context: .
+        builder: ${{ steps.buildx.outputs.name }}
+        file: install/docker/Dockerfile.Action
+        platforms: linux/arm,linux/arm64,linux/amd64
+        push: true
+        tags: |
+          ${{ steps.prep.outputs.image }}:${{ steps.prep.outputs.tag }}
+          ${{ steps.prep.outputs.image }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
