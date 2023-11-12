@@ -29,5 +29,7 @@ install ./v2raya_linux_"$v2raya_arch"_Realv2rayAVersion /usr/bin/v2raya
 mkdir /usr/local/share/v2raya
 ln -s /usr/local/share/v2ray /usr/local/share/v2raya
 ln -s /usr/local/share/xray /usr/local/share/v2raya
-wget -O /usr/local/share/v2ray/LoyalsoldierSite.dat https://raw.githubusercontent.com/mzz2017/dist-v2ray-rules-dat/master/geosite.dat
+wget -O /usr/local/share/v2raya/LoyalsoldierSite.dat https://raw.githubusercontent.com/mzz2017/dist-v2ray-rules-dat/master/geosite.dat
+wget -O /usr/local/share/v2raya/geosite.dat https://raw.githubusercontent.com/mzz2017/dist-v2ray-rules-dat/master/geosite.dat
+wget -O /usr/local/share/v2raya/geoip.dat https://raw.githubusercontent.com/mzz2017/dist-v2ray-rules-dat/master/geoip.dat
 cd "$current_dir" && rm -rf "$current_dir"/cache
