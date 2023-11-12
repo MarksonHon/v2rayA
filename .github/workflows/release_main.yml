@@ -426,17 +426,17 @@ jobs:
         tag_name: v${{ steps.prep.outputs.VERSION }}
         files: |
           release/*
-    - name: Refresh Cloudflare Cache
-      env:
-        CF_AUTH_EMAIL: ${{ secrets.CF_AUTH_EMAIL }}
-        CF_PARGE_CACHE_AUTH_KEY: ${{ secrets.CF_PARGE_CACHE_AUTH_KEY }}
-        CF_ZONE: ${{ secrets.CF_ZONE }}
-      shell: bash
-      run: |
-        curl -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/purge_cache" \
-          -H "X-Auth-Email: $CF_AUTH_EMAIL" \
-          -H "Authorization: Bearer $CF_PARGE_CACHE_AUTH_KEY" \
-          -H "Content-Type: application/json" \
+    # - name: Refresh Cloudflare Cache
+    #   env:
+    #     CF_AUTH_EMAIL: ${{ secrets.CF_AUTH_EMAIL }}
+    #     CF_PARGE_CACHE_AUTH_KEY: ${{ secrets.CF_PARGE_CACHE_AUTH_KEY }}
+    #     CF_ZONE: ${{ secrets.CF_ZONE }}
+    #   shell: bash
+    #   run: |
+    #     curl -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/purge_cache" \
+    #       -H "X-Auth-Email: $CF_AUTH_EMAIL" \
+    #       -H "Authorization: Bearer $CF_PARGE_CACHE_AUTH_KEY" \
+    #       -H "Content-Type: application/json" \
     #       --data '{"purge_everything":true}'
     # - name: Submit to Microsoft winget
     #   shell: pwsh
