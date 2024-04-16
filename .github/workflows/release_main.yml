@@ -95,7 +95,7 @@ jobs:
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Path v2raya_binaries
-        foreach ($arch in @('amd64', 'arm64', 'arm', '386', 'riscv64', 'mips64', 'mips64le', 'mipsle', 'mips', 'loong64')) {
+        foreach ($arch in @('amd64', 'arm64', '386', 'riscv64', 'mips64', 'mips64le', 'mipsle', 'mips', 'loong64')) {
           $env:GOARCH = $arch
           $filename = $((Get-Content ./install/friendly-filenames.json | ConvertFrom-Json)."linux-$arch")."friendlyName"
           Set-Location -Path service
@@ -197,7 +197,7 @@ jobs:
           $env:GOARCH = $arch
           $filename = $((Get-Content ./install/friendly-filenames.json | ConvertFrom-Json)."linux-$arch")."friendlyName"
           Set-Location -Path service
-          go build -tags "with_gvisor" -o ../v2raya_binaries/v2raya_with_singtun_$filename_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
+          go build -tags "with_gvisor" -o ../v2raya_binaries/v2raya_with_singtun_${filename}_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
           Set-Location -Path ..
         }
         foreach ($arch in @('amd64', 'arm64')) {
@@ -205,7 +205,7 @@ jobs:
           $env:GOARCH = $arch
           $filename = $((Get-Content ./install/friendly-filenames.json | ConvertFrom-Json)."windows-$arch")."friendlyName"
           Set-Location -Path service
-          go build -tags "with_gvisor" -o ../v2raya_binaries/v2raya_with_singtun_$filename_${env:VERSION}.exe -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
+          go build -tags "with_gvisor" -o ../v2raya_binaries/v2raya_with_singtun_${filename}_${env:VERSION}.exe -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
           Set-Location -Path ..
         }
         foreach ($arch in @('amd64', 'arm64')) {
@@ -213,7 +213,7 @@ jobs:
           $env:GOARCH = $arch
           $filename = $((Get-Content ./install/friendly-filenames.json | ConvertFrom-Json)."darwin-$arch")."friendlyName"
           Set-Location -Path service
-          go build -tags "with_gvisor" -o ../v2raya_binaries/v2raya_with_singtun_$filename_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
+          go build -tags "with_gvisor" -o ../v2raya_binaries/v2raya_with_singtun_${filename}_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
           Set-Location -Path ..
         }
     - name: Upload Artifact
