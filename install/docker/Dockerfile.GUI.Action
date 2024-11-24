@@ -1,4 +1,6 @@
-FROM nginx:stable-alpine
-WORKDIR /build
-COPY ./web /usr/share/nginx/html
+FROM alpine:latest AS builder
+WORKDIR /
+RUN apk add --no-cache lighttpd
+COPY ./web /var/www/localhost
 EXPOSE 80
+ENTRYPOINT ["lighttpd", "-D", "-f", "/etc/lighttpd/lighttpd.conf"]
