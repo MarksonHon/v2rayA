@@ -27,6 +27,20 @@ const updateSetting = async() => {
   if (data.value.code === 'SUCCESS')
     ElMessage.success(t('common.success'))
 }
+
+// 确保 dnsServers 有默认值
+if (!setting.dnsServers || setting.dnsServers.length === 0) {
+  setting.dnsServers = [
+    { address: 'localhost', domains: ['geosite:private'], outbound: 'direct' },
+    { address: '119.29.29.29', domains: ['geosite:cn'], outbound: 'direct' },
+    { address: '8.8.8.8', domains: [], outbound: 'proxy' },
+  ]
+}
+if (!setting.dnsMode)
+  setting.dnsMode = 'UseIP'
+
+const dnsSettingsRef = $ref<any>()
+const openDnsSettings = () => dnsSettingsRef?.open()
 </script>
 
 <template>
@@ -85,16 +99,14 @@ const updateSetting = async() => {
     </div>
 
     <div>
-      <div>{{ $t('setting.preventDnsSpoofing') }}</div>
-      <ElSelect v-model="setting.antipollution" size="small">
-        <ElOption value="closed" :label="$t('setting.options.closed')" />
-        <ElOption value="none" :label=" $t('setting.options.antiDnsHijack')" />
-        <ElOption value="dnsforward" :label="$t('setting.options.forwardDnsRequest')" />
-        <ElOption value="doh" :label="$t('setting.options.doh')" />
-        <ElOption value="advanced" :label="$t('setting.options.advanced')" />
-      </ElSelect>
-
-      <ElButton v-if="setting.antipollution === 'advanced'">{{ $t('operations.configure') }}</ElButton>
+      <div>{{ $t('dns.title') }}</div>
+      <ElButton size="small" @click="openDnsSettings">{{ $t('operations.configure') }}</ElButton>
+      <DnsSettings
+        ref="dnsSettingsRef"
+        v-model="setting.dnsServers"
+        v-model:dns-mode="setting.dnsMode"
+        v-model:node-resolve-dns="setting.nodeResolveDns"
+      />
     </div>
 
     <div v-if="setting.showSpecialMode">
@@ -102,7 +114,7 @@ const updateSetting = async() => {
       <ElSelect v-model="setting.specialMode" size="small">
         <ElOption value="none" :label="$t('setting.options.closed')" />
         <ElOption value="supervisor">supervisor</ElOption>
-        <ElOption v-show="setting.antipollution !== 'closed'" value="fakedns">
+        <ElOption value="fakedns">
           fakedns
         </ElOption>
       </ElSelect>

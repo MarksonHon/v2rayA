@@ -109,8 +109,6 @@ export default {
     transparentType: "Реализация прозрачного прокси/Системного прокси",
     logLevel: "Уровень журнала",
     pacMode: "Режим разделения трафика на порте с правилами",
-    preventDnsSpoofing: "Предотвратить DNS-спуфинг",
-    specialMode: "Специальный режим",
     mux: "Мультиплекс",
     autoUpdateSub: "Автоматически обновлять подписки",
     autoUpdateGfwlist: "Автоматически обновлять GFWList",
@@ -119,6 +117,10 @@ export default {
     portSharingOn: "Port Sharing",
     concurrency: "Параллелизм",
     inboundSniffing: "Сниффер",
+    tunPostStartScript: "TUN Post-Start Script",
+    tunStrictRoute: "TUN Строгий маршрут",
+    tunAutoRoute: "TUN Авто маршрут",
+    tunPostStartScriptPlaceholder: "Одна команда в строку (AutoRoute выкл.):",
     options: {
       trace: "Trace",
       debug: "Debug",
@@ -133,9 +135,6 @@ export default {
       sameAsPacMode:
         "Режим разделения трафика такой же, как у порта с правилами",
       customRouting: "Настраиваемая адресация",
-      antiDnsHijack: "Только защита от перехвата DNS (быстро)",
-      forwardDnsRequest: "Перенаправлять DNS запросы",
-      doh: "DoH (dns-over-https)",
       default: "По-умолчанию",
       on: "Включено",
       off: "Выключено",
@@ -145,7 +144,6 @@ export default {
       updateGfwlistAtIntervals: "Обновлять GFWList регулярно (в часах)",
       dependTransparentMode: "Следовать за Прозрачным прокси/Системным Прокси",
       closed: "Выключено",
-      advanced: "Расширенная настройка",
       leastPing: "С наименьшей задержкой",
     },
     messages: {
@@ -157,11 +155,6 @@ export default {
       transparentType:
         "★tproxy: поддерживает UDP, но не поддерживает docker. ★redirect: подходит для docker, но не поддерживает UDP и требуется занять локальный порт 53 для защиты dns от загрязнения.",
       pacMode: `Здесь вы можете выбрать правила разделения трафика для порта с правилами. По-умолчанию, порт для разделения трафика это 20172 с протоколом HTTP.`,
-      preventDnsSpoofing:
-        "★Перенаправлять DNS запросы: DNS запросы будут отправляться через прокси-сервер." +
-        "★DoH(dns-over-https, v2ray-core: 4.22.0+): DNS over HTTPS.",
-      specialMode:
-        "★supervisor：Мониторинг загрязнения dns, перехват заранее, используется механизм сниффинга v2ray-core для предотвращения загрязнения. ★fakedns：Использование стратегии fakedns для ускорения резолвинга.",
       tcpFastOpen:
         "Упростить процесс TCP рукопожатия для ускорения установки соединения. Есть риск распознавания характеристик пакетов. Это может помешать установить соединение если ваша система не подергивает это",
       mux:
@@ -172,6 +165,12 @@ export default {
                           <p>TCP: {tcpPorts}</p>
                           <p>UDP: {udpPorts}</p>`,
       grpcShouldWithTls: `gRPC должен быть с TLS`,
+      tunPostStartScript:
+        "⚠ Предупреждение: Неправильные команды могут повредить вашу операционную систему. Скрипт запускается только при выключенном AutoRoute.",
+      tunStrictRoute:
+        "Принудительно маршрутизировать весь трафик через TUN-интерфейс, предотвращая обход. Рекомендуется в Windows.",
+      tunAutoRoute:
+        "Автоматически настраивает таблицу маршрутизации. При отключении используйте скрипт запуска для ручной настройки маршрутов.",
       ssPluginImpl:
         "★по-умолчанию: 'transport' для simple-obfs, 'chained' для v2ray-plugin." +
         "★chained: shadowsocks трафик будет перенаправлен в отдельный плагин." +
@@ -227,13 +226,19 @@ export default {
     ],
   },
   dns: {
-    title: "Настройка DNS сервера",
-    internalQueryServers: "Серверы запросов домена",
-    externalQueryServers: "Внешние серверы запросов домена",
-    messages: [
-      '"@:(dns.internalQueryServers)" применяются для просмотра доменных имен в Китае, в то время как "@:(dns.externalQueryServers)" используется для других доменов.',
-      '"@:(dns.internalQueryServers)" будет использован для всех доменных имен если "@:(dns.externalQueryServers)" пуст.',
-    ],
+    title: "Настройки DNS",
+    queryStrategy: "Стратегия запросов",
+    nodeResolveDns: "DNS для резолвинга узлов",
+    nodeResolveDnsPlaceholder: "Напр.: https://223.5.5.5/dns-query (хост должен быть IP, не домен)",
+    nodeResolveDnsHint: "Используется для резолвинга хостов узлов прокси. Хост должен быть IP-адресом (не доменом), чтобы избежать циклической зависимости. DoH/DoT допускаются, если хост в URL является IP.",
+    server: "DNS сервер",
+    serverPlaceholder: "Напр.: 119.29.29.29 или https://dns.google/dns-query",
+    domains: "Обрабатываемые домены",
+    domainsPlaceholder: "По одному на строку, напр.:\ngeosite:cn\ndomain:example.com\n(пусто = запасной)",
+    outbound: "Исходящий трафик DNS",
+    direct: "Прямой",
+    proxy: "Прокси",
+    addServer: "Добавить сервер",
   },
   egressPortWhitelist: {
     title: "Настройка белового списка портов",

@@ -2,11 +2,9 @@ package tun
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"io"
-	"math/big"
 	"net"
 	"net/netip"
 	"strings"
@@ -30,8 +28,7 @@ const (
 )
 
 const (
-	dnsDirect = iota
-	dnsForward
+	dnsForward = iota
 	dnsFake4
 	dnsFake6
 )
@@ -47,9 +44,7 @@ type DNS struct {
 	dialer       N.Dialer
 	forward      N.Dialer
 	addrs        []M.Socksaddr
-	forceProxy   bool
 	whitelist    Matcher
-	servers      []M.Socksaddr
 	cache        *cache[netip.Addr, string]
 	currentIP4   netip.Addr
 	currentIP6   netip.Addr
@@ -59,12 +54,11 @@ type DNS struct {
 	useFakeIP    bool
 }
 
-func NewDNS(dialer, forward N.Dialer, forceProxy bool, addrs ...M.Socksaddr) *DNS {
+func NewDNS(dialer, forward N.Dialer, addrs ...M.Socksaddr) *DNS {
 	return &DNS{
 		dialer:       dialer,
 		forward:      forward,
 		addrs:        addrs,
-		forceProxy:   forceProxy,
 		cache:        newCache[netip.Addr, string](),
 		currentIP4:   fakePrefix4.Addr().Next(),
 		currentIP6:   fakePrefix6.Addr().Next(),
@@ -248,11 +242,7 @@ func (d *DNS) Exchange(ctx context.Context, msg *D.Msg) (*D.Msg, error) {
 	domain := strings.TrimSuffix(question.Name, ".")
 	log.Info("[TUN-DNS] Exchange: Query for %s (type %d)", domain, question.Qtype)
 
-	mode := dnsDirect
-	if len(d.servers) == 0 {
-		mode = dnsForward
-	}
-	log.Info("[TUN-DNS] Mode: %d, servers count: %d", mode, len(d.servers))
+	mode := dnsForward
 	if d.useFakeIP && !d.whitelist.Match(domain) {
 		switch question.Qtype {
 		case D.TypeA:
@@ -266,120 +256,65 @@ func (d *DNS) Exchange(ctx context.Context, msg *D.Msg) (*D.Msg, error) {
 	var dialer N.Dialer
 	server := defaultDNSServer
 	switch mode {
-	case dnsDirect:
-		if d.forceProxy {
-			dialer = d.forward
-		} else {
-			dialer = d.dialer
-		}
-		server = d.getServer()
 	case dnsForward:
-		// In TUN mode, d.forward is nil. Fall back to using dokodemo-door for DNS forwarding.
-		if d.forward != nil {
-			dialer = d.forward
-		} else {
-			dialer = d.dialer
-			server = defaultDNSServer // Use dokodemo-door at 127.0.0.1:6053
-		}
+		dialer = d.dialer
 	case dnsFake4:
 		addr, ok := d.getAvailableIP4(domain)
 		if ok {
 			return d.newResponse(msg, D.RcodeSuccess, addr), nil
 		}
-		// FakeIP allocation failed (rare), fall back to querying DNS
-		if d.forward != nil {
-			dialer = d.forward
-		} else {
-			dialer = d.dialer
-			server = defaultDNSServer
-		}
+		// FakeIP allocation failed (rare), fall back to v2ray DNS
+		dialer = d.dialer
 	case dnsFake6:
 		if addr, ok := d.getAvailableIP6(domain); ok {
 			return d.newResponse(msg, D.RcodeSuccess, addr), nil
 		}
-		// FakeIP allocation failed (rare), fall back to querying DNS
-		if d.forward != nil {
-			dialer = d.forward
-		} else {
-			dialer = d.dialer
-			server = defaultDNSServer
-		}
+		// FakeIP allocation failed (rare), fall back to v2ray DNS
+		dialer = d.dialer
 	}
 	if dialer != nil {
-		useForward := dialer == d.forward
-		preferTCP := false
 		var usedTCP bool
 		resp, err := func() (*D.Msg, error) {
-			ctxDial, cancel := context.WithTimeout(ctx, DNSTimeout)
+			// 每个 DNS 查询使用独立的 context，避免同一连接上并发查询互相 cancel
+			ctxDial, cancel := context.WithTimeout(context.Background(), DNSTimeout)
 			defer cancel()
+
+			// 对 loopback 目标（dokodemo-door :6053）直接走 TCP：
+			// 避免 UDP-over-loopback 可能被 TUN 重新捕获；同时配合 SO_LINGER=0 规避 TIME_WAIT 端口耗尽。
+			if server.Addr.IsLoopback() {
+				usedTCP = true
+				return exchangeTCP(ctxDial, dialer, server, msg)
+			}
 
 			buffer := make([]byte, 2048)
 			data, err := msg.PackBuffer(buffer)
 			if err != nil {
 				return nil, err
 			}
-
-			// First try UDP. For dokodemo-door (port 6053), this is a direct UDP connection.
-			// The dialer is SystemDialer in normal cases, connecting to the local dokodemo-door listener.
-			var serverConn net.PacketConn
-			var dialErr error
-
-			// For loopback destinations, explicitly bind to the corresponding loopback IP family
-			// to avoid dual-stack socket binding [::] which might be captured by TUN interface incorrectly on Windows
-			if dialer == d.dialer && server.Addr.IsLoopback() {
-				// Use TCP for reliable local DNS communication if UDP is unstable due to TUN routing
-				preferTCP = true
-			}
-
-			if dialer == d.dialer && server.Addr.IsLoopback() {
-				if server.Addr.Is4() {
-					serverConn, dialErr = net.ListenPacket("udp4", "127.0.0.1:0")
-				} else {
-					serverConn, dialErr = net.ListenPacket("udp6", "[::1]:0")
-				}
-			} else {
-				serverConn, dialErr = dialer.ListenPacket(ctxDial, server)
-			}
-
-			if dialErr == nil {
-				defer serverConn.Close()
-				serverConn.SetDeadline(time.Now().Add(DNSTimeout))
-				if _, err = serverConn.WriteTo(data, server.UDPAddr()); err == nil {
-					n, _, rErr := serverConn.ReadFrom(buffer)
-					if rErr == nil {
-						var resp D.Msg
-						unpackErr := resp.Unpack(buffer[:n])
-						if unpackErr == nil {
-							return &resp, nil
-						}
-						err = unpackErr
-					} else {
-						err = rErr
-					}
-				}
-			} else {
-				err = dialErr
-			}
-
-			// Fallback to TCP when UDP fails (e.g., packet too large or server requires TCP).
-			if err != nil && preferTCP {
-				usedTCP = true
-				return exchangeTCP(ctxDial, dialer, server, msg)
-			}
-
-			// If UDP failed and we do not prefer TCP, return the UDP error.
+			serverConn, err := dialer.ListenPacket(ctxDial, server)
 			if err != nil {
 				return nil, err
 			}
-
-			// Should not reach here; UDP success already returned.
-			return nil, nil
+			defer serverConn.Close()
+			_ = serverConn.SetDeadline(time.Now().Add(DNSTimeout))
+			if _, err = serverConn.WriteTo(data, server.UDPAddr()); err != nil {
+				return nil, err
+			}
+			n, _, err := serverConn.ReadFrom(buffer)
+			if err != nil {
+				return nil, err
+			}
+			var resp D.Msg
+			if err = resp.Unpack(buffer[:n]); err != nil {
+				return nil, err
+			}
+			return &resp, nil
 		}()
 		if err != nil {
-			log.Warn("[TUN-DNS] query=%s qtype=%d via=%s server=%s err=%v", domain, question.Qtype, dialLabel(useForward, usedTCP), server.String(), err)
+			log.Warn("[TUN-DNS] query=%s qtype=%d via=%s err=%v", domain, question.Qtype, dialLabel(usedTCP), err)
 			return d.newResponse(msg, D.RcodeServerFailure), nil
 		}
-		log.Trace("[TUN-DNS] query=%s qtype=%d via=%s server=%s rcode=%d", domain, question.Qtype, dialLabel(useForward, usedTCP), server.String(), resp.Rcode)
+		log.Trace("[TUN-DNS] query=%s qtype=%d via=%s rcode=%d", domain, question.Qtype, dialLabel(usedTCP), resp.Rcode)
 		return resp, nil
 	}
 	return d.newResponse(msg, D.RcodeRefused), nil
@@ -588,25 +523,9 @@ func (d *DNS) getAvailableIP6(domain string) (netip.Addr, bool) {
 	return addr, false
 }
 
-func (t *DNS) getServer() M.Socksaddr {
-	if len(t.servers) != 1 {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(t.servers))))
-		if err == nil {
-			return t.servers[n.Uint64()]
-		}
-	}
-	return t.servers[0]
-}
-
-func dialLabel(useForward bool, useTCP bool) string {
-	switch {
-	case useForward && useTCP:
-		return "socks5-tcp"
-	case useForward:
-		return "socks5-udp"
-	case useTCP:
+func dialLabel(useTCP bool) string {
+	if useTCP {
 		return "dokodemo-tcp"
-	default:
-		return "dokodemo-udp"
 	}
+	return "dokodemo-udp"
 }

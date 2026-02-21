@@ -27,8 +27,6 @@ import (
 )
 
 const (
-	// DNS addresses should point to the TUN interface itself, not gateway
-	// sing-tun intercepts DNS traffic to port 53 and handles it internally
 	dnsAddr  = "172.19.0.2"
 	dnsAddr6 = "fdfe:dcba:9876::2"
 )
@@ -36,8 +34,6 @@ const (
 var (
 	prefix4 = netip.MustParsePrefix("172.19.0.1/30")
 	prefix6 = netip.MustParsePrefix("fdfe:dcba:9876::1/126")
-	route4  = netip.MustParsePrefix("0.0.0.0/0")
-	route6  = netip.MustParsePrefix("::/0")
 
 	defaultLogger = logger.NOP()
 
@@ -57,7 +53,7 @@ type singTun struct {
 	useIPv6      bool
 	strictRoute  bool
 	autoRoute    bool
-	tunName      string // TUN interface name for cleanup
+	postScript   string // optional shell script run after TUN starts (only when AutoRoute=false)
 }
 
 // isReservedAddress checks if an IP address belongs to reserved address ranges
@@ -156,61 +152,6 @@ func filterTunDNSServers(servers []netip.AddrPort) []netip.AddrPort {
 	return filtered
 }
 
-// resolveDnsHost resolves a hostname to both A and AAAA records
-// Returns a list of IP addresses (both IPv4 and IPv6)
-func resolveDnsHost(host string) []netip.Addr {
-	var ips []netip.Addr
-
-	// Check if it's already an IP address
-	if addr, err := netip.ParseAddr(host); err == nil {
-		return []netip.Addr{addr}
-	}
-
-	// Resolve A records (IPv4)
-	if addrs, err := net.LookupIP(host); err == nil {
-		for _, addr := range addrs {
-			if ipAddr, ok := netip.AddrFromSlice(addr); ok {
-				ips = append(ips, ipAddr)
-			}
-		}
-	} else {
-		log.Warn("[TUN] Failed to resolve DNS host %s: %v", host, err)
-	}
-
-	return ips
-}
-
-// ResolveDnsServersToExcludes resolves DNS server hostnames to IP prefixes for TUN exclusion
-// This prevents DNS server traffic from being intercepted by TUN, avoiding routing loops
-func ResolveDnsServersToExcludes(dnsHosts []string) []netip.Prefix {
-	var excludes []netip.Prefix
-	seen := make(map[netip.Addr]bool)
-
-	log.Info("[TUN] Resolving DNS servers for exclusion: %v", dnsHosts)
-
-	for _, host := range dnsHosts {
-		ips := resolveDnsHost(host)
-		for _, ip := range ips {
-			if seen[ip] {
-				continue
-			}
-			seen[ip] = true
-
-			// Convert IP to /32 (IPv4) or /128 (IPv6) prefix
-			var prefix netip.Prefix
-			if ip.Is4() {
-				prefix = netip.PrefixFrom(ip, 32)
-			} else {
-				prefix = netip.PrefixFrom(ip, 128)
-			}
-			excludes = append(excludes, prefix)
-			log.Info("[TUN] Added DNS server %s (%s) to exclusion list", host, ip)
-		}
-	}
-
-	return excludes
-}
-
 func NewSingTun() Tun {
 	dialer := N.SystemDialer
 	client := socks.NewClient(dialer, M.ParseSocksaddrHostPort("127.0.0.1", 52345), socks.Version5, "", "")
@@ -220,10 +161,8 @@ func NewSingTun() Tun {
 		forward:     client,
 		strictRoute: false,
 		autoRoute:   true, // Default to enabled
-		// DNS: dialer is for forwarding to dokodemo-door (127.0.0.1:6053)
-		// forward is nil, so all DNS queries will use dnsForward mode
-		// No DNS server addresses - TUN only forwards to port 6053
-		dns: NewDNS(dialer, nil, false),
+		// DNS is sent to local dokodemo-door listener instead of SOCKS
+		dns: NewDNS(dialer, nil, M.ParseSocksaddrHostPort(dnsAddr, 53), M.ParseSocksaddrHostPort(dnsAddr6, 53)),
 	}
 }
 
@@ -232,38 +171,6 @@ func (t *singTun) Start(stack Stack) error {
 	defer func() {
 		failedCloser.Close()
 	}()
-
-	// On Windows, pre-exclude common public DNS servers to prevent routing loops
-	// when v2ray core uses them for direct outbound queries
-	if runtime.GOOS == "windows" {
-		commonDNS := []string{
-			"1.1.1.1/32", "1.0.0.1/32", // Cloudflare
-			"8.8.8.8/32", "8.8.4.4/32", // Google
-			"9.9.9.9/32", "149.112.112.112/32", // Quad9
-			"208.67.222.222/32", "208.67.220.220/32", // OpenDNS
-			"114.114.114.114/32",           // 114DNS
-			"223.5.5.5/32", "223.6.6.6/32", // AliDNS
-			// IPv6
-			"2001:4860:4860::8888/128", "2001:4860:4860::8844/128", // Google
-			"2606:4700:4700::1111/128", "2606:4700:4700::1001/128", // Cloudflare
-		}
-		for _, cidr := range commonDNS {
-			if prefix, err := netip.ParsePrefix(cidr); err == nil {
-				// Avoid duplicates if already added
-				exists := false
-				for _, ex := range t.excludeAddrs {
-					if ex == prefix {
-						exists = true
-						break
-					}
-				}
-				if !exists {
-					t.excludeAddrs = append(t.excludeAddrs, prefix)
-					log.Info("[TUN] Automatically excluded common DNS server: %s", cidr)
-				}
-			}
-		}
-	}
 
 	t.Close()
 	networkUpdateMonitor, err := tun.NewNetworkUpdateMonitor(defaultLogger)
@@ -276,12 +183,23 @@ func (t *singTun) Start(stack Stack) error {
 		return err
 	}
 	failedCloser = append(failedCloser, interfaceMonitor)
-	// Separate excluded addresses by IP version for TUN options
+	autoRoute := t.autoRoute
+	strictRoute := t.strictRoute
+
+	log.Info("[TUN] Starting with StrictRoute=%t, AutoRoute=%t", strictRoute, autoRoute)
+	if autoRoute {
+		log.Info("[TUN] AutoRoute=true: sing-tun will manage routes and DNS")
+	} else {
+		log.Info("[TUN] AutoRoute=false: v2rayA will manage routes and DNS manually")
+	}
+
+	// Build exclude-address lists (always used for Inet4/6RouteExcludeAddress).
+	// When AutoRoute=true sing-tun uses them directly.
+	// When AutoRoute=false we install them via SetupExcludeRoutes after the stack starts.
 	var inet4Exclude, inet6Exclude []netip.Prefix
 
 	// Always exclude 127.0.0.0/8 (loopback) to prevent capturing local proxy traffic
-	loopback4 := netip.MustParsePrefix("127.0.0.0/8")
-	inet4Exclude = append(inet4Exclude, loopback4)
+	inet4Exclude = append(inet4Exclude, netip.MustParsePrefix("127.0.0.0/8"))
 	log.Info("[TUN] Excluding loopback: 127.0.0.0/8")
 
 	for _, prefix := range t.excludeAddrs {
@@ -293,94 +211,62 @@ func (t *singTun) Start(stack Stack) error {
 			log.Info("[TUN] Excluding IPv6: %s", prefix.String())
 		}
 	}
-
-	autoRoute := t.autoRoute
-	strictRoute := t.strictRoute
-
-	// On Windows, disable sing-tun's AutoRoute if user has disabled it
-	// or if we need to add manual default route with proper metric
-	if runtime.GOOS == "windows" && autoRoute {
-		autoRoute = false
-		log.Info("[TUN] Windows: Disabling AutoRoute, will use manual routing")
-	} else if !t.autoRoute {
-		log.Info("[TUN] AutoRoute disabled by user configuration")
-	}
-
-	log.Info("[TUN] Starting with StrictRoute=%t, AutoRoute=%t", strictRoute, autoRoute)
 	log.Info("[TUN] Total exclusions: %d IPv4, %d IPv6", len(inet4Exclude), len(inet6Exclude))
-	if runtime.GOOS == "windows" && strictRoute {
-		log.Warn("[TUN] Windows: StrictRoute may only allow main process traffic!")
-	}
-
-	// Pre-install exclusion routes on platforms without fwmark support (e.g. Windows/macOS)
-	if len(t.excludeAddrs) > 0 {
-		if err := SetupExcludeRoutes(t.excludeAddrs); err != nil {
-			log.Warn("[TUN] Failed to pre-install exclude routes: %v", err)
-		}
-	}
 
 	// Choose interface name based on platform
-	// macOS requires "utun" prefix, so we use empty string to let the system auto-assign
-	// Windows and Linux support custom names
 	tunName := "v2raya-tun"
 	if runtime.GOOS == "darwin" {
-		tunName = "" // macOS will auto-assign utun0, utun1, etc.
+		tunName = "" // macOS auto-assigns utun0, utun1 …
 		log.Info("[TUN] macOS: Using auto-assigned utun interface name")
 	} else {
 		log.Info("[TUN] Using custom interface name: %s", tunName)
 	}
 
+	// Collect DNS server addresses (= TUN gateway addresses)
+	var dnsServers []netip.Addr
+	dnsServers = append(dnsServers, netip.MustParseAddr(dnsAddr))
+
 	tunOptions := tun.Options{
 		Name:                     tun.CalculateInterfaceName(tunName),
 		MTU:                      9000,
 		Inet4Address:             []netip.Prefix{prefix4},
-		Inet4RouteAddress:        []netip.Prefix{route4},
-		Inet4RouteExcludeAddress: inet4Exclude, // Exclude loopback + server IPs
+		Inet4Gateway:             netip.MustParseAddr(dnsAddr),
+		Inet4RouteExcludeAddress: inet4Exclude,
 		AutoRoute:                autoRoute,
 		StrictRoute:              strictRoute,
 		InterfaceMonitor:         interfaceMonitor,
 	}
 
-	// Set DNS server for TUN interface
-	var dnsServers []netip.Addr
-	dnsAddrIP, _ := netip.ParseAddr(dnsAddr)
-	if dnsAddrIP.IsValid() {
-		dnsServers = append(dnsServers, dnsAddrIP)
-		log.Info("[TUN] IPv4 DNS server: %s", dnsAddr)
-	}
-
-	// Enable IPv6 if requested
+	// IPv6
 	if t.useIPv6 {
+		dnsAddrIPv6 := netip.MustParseAddr(dnsAddr6)
 		tunOptions.Inet6Address = []netip.Prefix{prefix6}
-		tunOptions.Inet6RouteAddress = []netip.Prefix{route6}
-		// Exclude IPv6 loopback (::1/128)
+		tunOptions.Inet6Gateway = dnsAddrIPv6
 		loopback6 := netip.MustParsePrefix("::1/128")
 		inet6Exclude = append([]netip.Prefix{loopback6}, inet6Exclude...)
 		tunOptions.Inet6RouteExcludeAddress = inet6Exclude
 		log.Info("[TUN] Excluding IPv6 loopback: ::1/128")
-
-		// Add IPv6 DNS server
-		dnsAddrIPv6, _ := netip.ParseAddr(dnsAddr6)
-		if dnsAddrIPv6.IsValid() {
-			dnsServers = append(dnsServers, dnsAddrIPv6)
-			log.Info("[TUN] IPv6 DNS server: %s", dnsAddr6)
-		}
+		dnsServers = append(dnsServers, dnsAddrIPv6)
+		log.Info("[TUN] IPv6 gateway/DNS: %s", dnsAddr6)
 	}
 
-	// Set DNS servers (if any)
-	if len(dnsServers) > 0 {
+	// When AutoRoute=true sing-tun sets DNS automatically from DNSServers.
+	// When AutoRoute=false sing-tun clears DNS; we restore it via netsh after tun.New().
+	if autoRoute {
 		tunOptions.DNSServers = dnsServers
 	}
+
 	tunInterface, err := tun.New(tunOptions)
 	if err != nil {
 		return err
 	}
 	failedCloser = append(failedCloser, tunInterface)
 
-	// Setup policy routing rules to exclude fwmark 0x80 traffic (v2ray/xray/plugin)
-	if err := SetupTunRouteRules(); err != nil {
-		// Log warning but continue - the reserved address check still provides protection
-		// This is mainly for Linux systems with root privileges
+	if !autoRoute {
+		// sing-tun cleared DNS — restore it now
+		if err := restoreInterfaceDNS(tunOptions.Name, dnsServers); err != nil {
+			log.Warn("[TUN] Failed to restore interface DNS: %v", err)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -407,23 +293,37 @@ func (t *singTun) Start(stack Stack) error {
 	t.closer = failedCloser
 	failedCloser = nil
 	t.waiter = &gvisorWaiter{tunStack}
-	t.tunName = tunName // Save for cleanup
 
-	// Setup DNS servers on Windows (sing-tun doesn't automatically apply DNS on Windows)
-	if len(dnsServers) > 0 {
-		if err := SetupTunDNS(dnsServers, tunName); err != nil {
-			log.Warn("[TUN] Failed to setup DNS servers: %v", err)
+	if !autoRoute {
+		// Install server-IP bypass routes via the physical gateway
+		if len(t.excludeAddrs) > 0 {
+			if err := SetupExcludeRoutes(t.excludeAddrs); err != nil {
+				log.Warn("[TUN] Failed to setup exclude routes: %v", err)
+			}
 		}
+		// Run user-defined post-start script (e.g. add default route on Windows)
+		if t.postScript != "" {
+			log.Info("[TUN] Running post-start script")
+			runPostScript(t.postScript)
+		}
+	} else {
+		log.Info("[TUN] AutoRoute=true: skipping manual route/script setup")
 	}
 
-	// Note: Server addresses are now excluded via Inet4/6RouteExcludeAddress
-	// No need for manual static routes - sing-tun handles it natively
-
-	t.dns.whitelist, _ = GetWhitelistCN()
-	// In TUN mode, we don't set d.servers so that DNS queries go through dnsForward mode
-	// which will use dokodemo-door (defaultDNSServer = 127.0.0.1:6053)
-	// DO NOT set t.dns.servers here - keep it empty for dnsForward mode
-	t.whitelist = nil
+	// Append CN whitelist to any domains already added via AddDomainWhitelist
+	// (e.g. server hostnames added before Start()). A plain assignment would
+	// wipe those entries out and cause server domains to receive FakeIPs,
+	// creating a routing loop through v2ray.
+	if cnWhitelist, err := GetWhitelistCN(); err == nil {
+		t.dns.whitelist = append(t.dns.whitelist, cnWhitelist...)
+	}
+	// NOTE: do NOT clear t.whitelist here.
+	// For AutoRoute=true, the whitelist serves as a handler-level fallback:
+	// if Inet4RouteExcludeAddress somehow fails to exclude a server IP (e.g.,
+	// DNS resolution failed in transparent.go), the handler can still route that
+	// IP directly instead of forwarding it to SOCKS5 and creating a routing loop.
+	// For AutoRoute=false, it is equally useful as an explicit bypass list.
+	// The whitelist is cleared in Close() when TUN shuts down.
 	return nil
 }
 
@@ -438,16 +338,12 @@ func (t *singTun) Close() error {
 			t.waiter.Wait()
 			t.waiter = nil
 		}
-		// Cleanup DNS settings on Windows
-		if t.tunName != "" {
-			CleanupTunDNS(t.tunName)
-			t.tunName = ""
-		}
-		// Cleanup routing rules
-		CleanupTunRouteRules()
-		// Cleanup exclude routes on non-Linux platforms
-		if err := CleanupExcludeRoutes(); err != nil {
-			log.Warn("[TUN] Failed to cleanup exclude routes: %v", err)
+		if !t.autoRoute {
+			// Cleanup manual routes added when AutoRoute=false
+			CleanupTunRouteRules()
+			if err := CleanupExcludeRoutes(); err != nil {
+				log.Warn("[TUN] Failed to cleanup exclude routes: %v", err)
+			}
 		}
 		// Clear whitelist and exclusion list
 		t.whitelist = nil
@@ -463,6 +359,14 @@ func (t *singTun) AddDomainWhitelist(domain string) {
 }
 
 func (t *singTun) AddIPWhitelist(addr netip.Addr) {
+	// Unmap IPv4-in-IPv6 addresses (e.g. ::ffff:1.2.3.4 → 1.2.3.4).
+	// net.LookupIP on many platforms returns 16-byte slices even for IPv4 targets;
+	// netip.AddrFromSlice keeps them as Is4In6() which would land in inet6Exclude
+	// and fail to match actual IPv4 route traffic.
+	addr = addr.Unmap()
+	if !addr.IsValid() {
+		return
+	}
 	t.whitelist = append(t.whitelist, addr)
 	log.Info("[TUN] Added IP to whitelist: %s", addr.String())
 	// Also add to route exclusion list to prevent routing through TUN
@@ -486,6 +390,10 @@ func (t *singTun) SetStrictRoute(enabled bool) {
 
 func (t *singTun) SetAutoRoute(enabled bool) {
 	t.autoRoute = enabled
+}
+
+func (t *singTun) SetPostScript(script string) {
+	t.postScript = script
 }
 
 func (t *singTun) PrepareConnection(network string, source M.Socksaddr, destination M.Socksaddr) error {
@@ -546,7 +454,6 @@ func (t *singTun) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, 
 		Source:      source,
 		Destination: destination,
 	}
-	log.Trace("[TUN-NEW] New UDP connection: %s -> %s", source, destination)
 	err := t.newPacketConnection(ctx, conn, metadata)
 	if err != nil {
 		N.CloseOnHandshakeFailure(conn, onClose, err)
@@ -624,4 +531,38 @@ func GetWhitelistCN() (Matcher, error) {
 		}
 	}
 	return matcher, nil
+}
+
+// ResolveDnsServersToExcludes takes a list of DNS server hostnames (plain IPs or domain names)
+// and returns the corresponding /32 or /128 prefixes to exclude from TUN routing,
+// preventing DNS traffic from being captured and causing routing loops.
+func ResolveDnsServersToExcludes(hosts []string) []netip.Prefix {
+	var prefixes []netip.Prefix
+	seen := make(map[netip.Addr]bool)
+	add := func(addr netip.Addr) {
+		addr = addr.Unmap()
+		if !addr.IsValid() || seen[addr] {
+			return
+		}
+		seen[addr] = true
+		prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	for _, host := range hosts {
+		if addr, err := netip.ParseAddr(host); err == nil {
+			add(addr)
+			continue
+		}
+		// Domain name – resolve to IPs
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			log.Warn("[TUN] ResolveDnsServersToExcludes: failed to resolve %s: %v", host, err)
+			continue
+		}
+		for _, ip := range ips {
+			if addr, ok := netip.AddrFromSlice(ip); ok {
+				add(addr)
+			}
+		}
+	}
+	return prefixes
 }

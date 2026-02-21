@@ -1,6 +1,8 @@
 package configure
 
 import (
+	"runtime"
+
 	"github.com/v2rayA/v2rayA/common"
 	"github.com/v2rayA/v2rayA/core/ipforward"
 	"github.com/v2rayA/v2rayA/pkg/util/log"
@@ -22,13 +24,19 @@ type Setting struct {
 	IpForward                          bool            `json:"ipforward"`
 	RouteOnly                          bool            `json:"routeOnly"`
 	PortSharing                        bool            `json:"portSharing"`
-	SpecialMode                        SpecialMode     `json:"specialMode"`
 	TransparentType                    TransparentType `json:"transparentType"`
-	AntiPollution                      Antipollution   `json:"antipollution"`
 	TunFakeIP                          bool            `json:"tunFakeIP"`
 	TunIPv6                            bool            `json:"tunIPv6"`
 	TunStrictRoute                     bool            `json:"tunStrictRoute"`
 	TunAutoRoute                       bool            `json:"tunAutoRoute"`
+	// TunPostStartScript is an optional shell script run after TUN starts when AutoRoute is disabled.
+	// Warning: incorrect commands may damage your operating system.
+	TunPostStartScript string `json:"tunPostStartScript"`
+	// 新 DNS 配置
+	DnsMode    DnsQueryStrategy `json:"dnsMode"`
+	DnsServers []DnsServerEntry `json:"dnsServers"`
+	// NodeResolveDns: 用于解析节点域名的 DNS 服务器地址（留空则使用内置默认）
+	NodeResolveDns string `json:"nodeResolveDns"`
 }
 
 func NewSetting() (setting *Setting) {
@@ -47,13 +55,19 @@ func NewSetting() (setting *Setting) {
 		Transparent:                        TransparentClose,
 		IpForward:                          ipforward.IsIpForwardOn(),
 		PortSharing:                        false,
-		SpecialMode:                        SpecialModeNone,
 		TransparentType:                    TransparentRedirect,
-		AntiPollution:                      AntipollutionClosed,
 		TunFakeIP:                          true,
 		TunIPv6:                            false,
 		TunStrictRoute:                     false,
 		TunAutoRoute:                       true,
+		TunPostStartScript:                 defaultTunPostStartScript(),
+		DnsMode:                            DnsQueryStrategyUseIP,
+		NodeResolveDns:                     "https://223.5.5.5/dns-query",
+		DnsServers: []DnsServerEntry{
+			{Address: "localhost", Domains: []string{"geosite:private"}, Outbound: "direct"},
+			{Address: "119.29.29.29", Domains: []string{"geosite:cn"}, Outbound: "direct"},
+			{Address: "8.8.8.8", Domains: []string{}, Outbound: "proxy"},
+		},
 	}
 }
 
@@ -66,6 +80,16 @@ func (s *Setting) FillEmpty() {
 type CustomPac struct {
 	DefaultProxyMode RoutingDefaultProxyMode `json:"defaultProxyMode"` //默认路由规则, proxy还是direct
 	RoutingRules     []RoutingRule           `json:"routingRules"`
+}
+
+// defaultTunPostStartScript returns the default post-start script for the current OS.
+// On Windows it adds the default route through the TUN gateway (current v2rayA behaviour).
+// On all other platforms an empty script is used because AutoRoute handles routing.
+func defaultTunPostStartScript() string {
+	if runtime.GOOS == "windows" {
+		return "route add 0.0.0.0 mask 0.0.0.0 172.19.0.2 metric 1"
+	}
+	return ""
 }
 
 // v2rayTmpl.RoutingRule的前端友好版本

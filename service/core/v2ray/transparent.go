@@ -9,7 +9,6 @@ import (
 
 	"github.com/v2rayA/v2rayA/conf"
 	"github.com/v2rayA/v2rayA/core/iptables"
-	"github.com/v2rayA/v2rayA/core/specialMode"
 	"github.com/v2rayA/v2rayA/core/tun"
 	"github.com/v2rayA/v2rayA/db/configure"
 	"github.com/v2rayA/v2rayA/pkg/util/log"
@@ -28,19 +27,13 @@ func deleteTransparentProxyRules() {
 	time.Sleep(30 * time.Millisecond)
 }
 
-func writeTransparentProxyRules(tmpl *Template) (err error) {
+func writeTransparentProxyRules() (err error) {
 	defer func() {
 		if err != nil {
 			log.Warn("writeTransparentProxyRules: %v", err)
 			deleteTransparentProxyRules()
 		}
 	}()
-	if specialMode.ShouldUseSupervisor() {
-		if err = iptables.DropSpoofing.GetSetupCommands().Run(true); err != nil {
-			log.Warn("DropSpoofing can't be enable: %v", err)
-			return err
-		}
-	}
 	setting := configure.GetSettingNotNil()
 	switch setting.TransparentType {
 	case configure.TransparentTproxy:
@@ -62,45 +55,62 @@ func writeTransparentProxyRules(tmpl *Template) (err error) {
 		tun.Default.SetIPv6(setting.TunIPv6)
 		tun.Default.SetStrictRoute(setting.TunStrictRoute)
 		tun.Default.SetAutoRoute(setting.TunAutoRoute)
+		tun.Default.SetPostScript(setting.TunPostStartScript)
 
 		// Extract and resolve DNS servers from v2ray configuration
-		// This prevents DNS server traffic from being intercepted by TUN, avoiding routing loops
-		log.Info("[TUN] Extracting DNS servers from configuration...")
-		var dnsHosts []string
-		if tmpl != nil {
-			dnsHosts = ExtractDnsServerHostsFromTemplate(tmpl)
-		}
+		// Only direct-outbound DNS servers are excluded from TUN routing.
+		// Proxy-bound DNS servers must remain inside TUN so their traffic is proxied correctly.
+		log.Info("[TUN] Extracting direct DNS servers from configuration...")
+		dnsHosts := ExtractDirectDnsServerHosts(setting)
 		if len(dnsHosts) > 0 {
 			dnsExcludes := tun.ResolveDnsServersToExcludes(dnsHosts)
 			for _, prefix := range dnsExcludes {
 				tun.Default.AddIPWhitelist(prefix.Addr())
-				log.Info("[TUN] Added DNS server IP to exclusion list: %s", prefix.Addr())
+				log.Info("[TUN] Added direct DNS server IP to exclusion list: %s", prefix.Addr())
 			}
 		}
 
-		// Add server addresses to exclusion list BEFORE starting TUN
-		// Resolve domain names to IPs to ensure proper routing exclusion
+		// Add server addresses to exclusion list BEFORE starting TUN.
+		// For domain-name servers, resolve IPs so they can be excluded from TUN routes
+		// (Inet4RouteExcludeAddress). Without exclusion, v2ray's outbound connections to the
+		// VPN server would be captured by TUN and forwarded back to v2ray — an infinite loop.
+		// Retry up to 3 times; transient DNS issues are common at startup on some platforms.
 		_, serverInfos, _ := getConnectedServerObjs()
 		for _, info := range serverInfos {
 			host := info.Info.GetHostname()
 			if addr, err := netip.ParseAddr(host); err == nil {
-				// Already an IP address
+				// Already an IP address — no DNS needed.
 				tun.Default.AddIPWhitelist(addr)
 			} else {
-				// Domain name - resolve to IPs first
+				// Domain name — resolve to IPs with retry.
 				log.Info("[TUN] Resolving server domain: %s", host)
-				if ips, err := net.LookupIP(host); err == nil {
+				var ips []net.IP
+				var lookupErr error
+				for attempt := 0; attempt < 3; attempt++ {
+					if attempt > 0 {
+						time.Sleep(300 * time.Millisecond)
+						log.Info("[TUN] Retrying DNS for %s (attempt %d/3)", host, attempt+1)
+					}
+					ips, lookupErr = net.LookupIP(host)
+					if lookupErr == nil {
+						break
+					}
+				}
+				// Always add domain to DNS whitelist (ensures real IP, not FakeIP, is returned).
+				tun.Default.AddDomainWhitelist(host)
+				if lookupErr == nil {
 					log.Info("[TUN] Resolved %s to %d IP address(es)", host, len(ips))
 					for _, ip := range ips {
 						if addr, ok := netip.AddrFromSlice(ip); ok {
 							tun.Default.AddIPWhitelist(addr)
 						}
 					}
-					// Also add domain to whitelist for DNS queries
-					tun.Default.AddDomainWhitelist(host)
 				} else {
-					log.Warn("[TUN] Failed to resolve server domain %s: %v, adding as domain whitelist", host, err)
-					tun.Default.AddDomainWhitelist(host)
+					// All retries failed. The server IP is unknown and cannot be excluded from
+					// TUN routes. Traffic to the VPN server may loop back through TUN.
+					// Log a clear warning so users can diagnose the issue.
+					log.Warn("[TUN] Failed to resolve server domain %s after 3 attempts: %v", host, lookupErr)
+					log.Warn("[TUN] Server IP is NOT excluded from TUN routes — routing loop is possible. Check your DNS.")
 				}
 			}
 		}
@@ -117,17 +127,10 @@ func writeTransparentProxyRules(tmpl *Template) (err error) {
 		return fmt.Errorf("undefined \"%v\" mode of transparent proxy", setting.TransparentType)
 	}
 
-	if specialMode.ShouldLocalDnsListen() {
-		if couldListenLocalhost, e := specialMode.CouldLocalDnsListen(); couldListenLocalhost {
-			if e != nil {
-				log.Warn("only listen at 127.2.0.17: %v", e)
-			}
-			resetResolvHijacker()
-		} else if specialMode.ShouldUseFakeDns() {
-			return fmt.Errorf("fakedns cannot be enabled: %w", e)
-		} else {
-			log.Warn("writeTransparentProxyRules: %v", e)
-		}
+	if setting.Transparent != configure.TransparentClose &&
+		setting.TransparentType == configure.TransparentRedirect &&
+		!conf.GetEnvironmentConfig().Lite {
+		resetResolvHijacker()
 	}
 	return nil
 }

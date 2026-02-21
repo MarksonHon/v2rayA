@@ -108,19 +108,37 @@
       </b-field>
 
       <b-field v-show="tunEnabled" label-position="on-border">
-        <template slot="label">StrictRoute</template>
+        <template slot="label">
+          {{ $t("setting.tunStrictRoute") }}
+          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.tunStrictRoute')" position="is-right">
+            <b-icon size="is-small" icon=" iconfont icon-help-circle-outline"
+              style="position: relative; top: 2px; right: 3px; font-weight: normal" />
+          </b-tooltip>
+        </template>
         <b-select v-model="tunStrictRoute" expanded>
-          <option :value="true">{{ $t("setting.options.enabled") }}</option>
-          <option :value="false">{{ $t("setting.options.disabled") }}</option>
+          <option :value="true">{{ $t("setting.options.on") }}</option>
+          <option :value="false">{{ $t("setting.options.off") }}</option>
         </b-select>
       </b-field>
 
       <b-field v-show="tunEnabled" label-position="on-border">
-        <template slot="label">AutoRoute</template>
+        <template slot="label">
+          {{ $t("setting.tunAutoRoute") }}
+          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.tunAutoRoute')" position="is-right">
+            <b-icon size="is-small" icon=" iconfont icon-help-circle-outline"
+              style="position: relative; top: 2px; right: 3px; font-weight: normal" />
+          </b-tooltip>
+        </template>
         <b-select v-model="tunAutoRoute" expanded>
-          <option :value="true">{{ $t("setting.options.enabled") }}</option>
-          <option :value="false">{{ $t("setting.options.disabled") }}</option>
+          <option :value="true">{{ $t("setting.options.on") }}</option>
+          <option :value="false">{{ $t("setting.options.off") }}</option>
         </b-select>
+        <b-button v-show="!tunAutoRoute" style="
+            margin-left: 0;
+            border-radius: 0px;
+            color: rgba(0, 0, 0, 0.75);
+          " outlined @click="handleClickTunPostStartScript">{{ $t("setting.tunPostStartScript") }}
+        </b-button>
       </b-field>
 
       <b-field label-position="on-border">
@@ -160,47 +178,6 @@
           </b-button>
         </template>
         <p></p>
-      </b-field>
-      <b-field label-position="on-border">
-        <template slot="label">
-          {{ $t("setting.preventDnsSpoofing") }}
-          <b-tooltip type="is-dark" :label="$t('setting.messages.preventDnsSpoofing')" multilined position="is-right">
-            <b-icon size="is-small" icon=" iconfont icon-help-circle-outline"
-              style="position: relative; top: 2px; right: 3px; font-weight: normal" />
-          </b-tooltip>
-        </template>
-        <b-select v-model="antipollution" expanded class="left-border">
-          <option value="closed">{{ $t("setting.options.closed") }}</option>
-          <option value="none">
-            {{ $t("setting.options.antiDnsHijack") }}
-          </option>
-          <option value="dnsforward">
-            {{ $t("setting.options.forwardDnsRequest") }}
-          </option>
-          <option value="doh">{{ $t("setting.options.doh") }}</option>
-          <option value="advanced">{{ $t("setting.options.advanced") }}</option>
-        </b-select>
-        <b-button v-if="antipollution === 'advanced'" :class="{
-          'right-extra-button': antipollution === 'closed',
-          'no-border-radius': antipollution !== 'closed',
-        }" @click="handleClickDnsSetting">
-          {{ $t("operations.configure") }}
-        </b-button>
-        <p></p>
-      </b-field>
-      <b-field v-show="showSpecialMode" label-position="on-border">
-        <template slot="label">
-          {{ $t("setting.specialMode") }}
-          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.specialMode')" position="is-right">
-            <b-icon size="is-small" icon=" iconfont icon-help-circle-outline"
-              style="position: relative; top: 2px; right: 3px; font-weight: normal" />
-          </b-tooltip>
-        </template>
-        <b-select v-model="specialMode" expanded class="left-border">
-          <option value="none">{{ $t("setting.options.closed") }}</option>
-          <option value="supervisor">supervisor</option>
-          <option v-show="antipollution !== 'closed'" value="fakedns">fakedns</option>
-        </b-select>
       </b-field>
       <b-field label-position="on-border">
         <template slot="label">
@@ -319,6 +296,9 @@
       <button class="button footer-absolute-left" type="button" @click="$emit('clickPorts')">
         {{ $t("customAddressPort.title") }}
       </button>
+      <button class="button footer-dns-button" type="button" @click="handleClickDnsSetting">
+        {{ $t("dns.title") }}
+      </button>
       <button class="button" type="button" @click="$parent.close()">
         {{ $t("operations.cancel") }}
       </button>
@@ -343,6 +323,7 @@ import BButton from "buefy/src/components/button/Button";
 import BSelect from "buefy/src/components/select/Select";
 import BCheckboxButton from "buefy/src/components/checkbox/CheckboxButton";
 import modalDnsSetting from "./modalDnsSetting";
+import modalTunPostStartScript from "./modalTunPostStartScript";
 import axios from "../plugins/axios";
 import { waitingConnected } from "@/assets/js/networkInspect";
 
@@ -361,13 +342,15 @@ export default {
     tunIPv6: false,
     tunStrictRoute: false,
     tunAutoRoute: true,
+    tunPostStartScript: "",
     ipforward: false,
     portSharing: false,
     dnsForceMode: false,
     dnsforward: "no",
-    antipollution: "none",
+    dnsMode: "UseIP",
+    dnsServers: [],
+    nodeResolveDns: "",
     routeOnly: false,
-    specialMode: "none",
     pacAutoUpdateMode: "none",
     pacAutoUpdateIntervalHour: 0,
     subscriptionAutoUpdateMode: "none",
@@ -379,7 +362,6 @@ export default {
     serverListMode: "noSubscription",
     remoteGFWListVersion: "checking...",
     localGFWListVersion: "checking...",
-    showSpecialMode: true,
     os: "",
     isRoot: false,
   }),
@@ -402,13 +384,6 @@ export default {
       const isTunType =
         this.transparentType === "gvisor_tun" || this.transparentType === "system_tun";
       return this.transparent !== "close" && isTunType;
-    },
-  },
-  watch: {
-    antipollution(val) {
-      if (val === "closed" && this.specialMode === "fakedns") {
-        this.specialMode = "none";
-      }
     },
   },
   created() {
@@ -446,7 +421,6 @@ export default {
           });
           if (this.lite) {
             this.transparentType = "system_proxy";
-            this.showSpecialMode = false;
           }
         });
       });
@@ -478,12 +452,13 @@ export default {
             tunIPv6: this.tunIPv6,
             tunStrictRoute: this.tunStrictRoute,
             tunAutoRoute: this.tunAutoRoute,
+            tunPostStartScript: this.tunPostStartScript,
             ipforward: this.ipforward,
             portSharing: this.portSharing,
             routeOnly: this.routeOnly,
-            dnsforward: this.antipollution === "dnsforward" ? "yes" : "no", //版本兼容
-            antipollution: this.antipollution,
-            specialMode: this.specialMode,
+            dnsMode: this.dnsMode,
+            dnsServers: this.dnsServers,
+            nodeResolveDns: this.nodeResolveDns,
           },
           cancelToken: new axios.CancelToken(function executor(c) {
             cancel = c;
@@ -575,12 +550,40 @@ export default {
         canCancel: true,
       });
     },
+    handleClickTunPostStartScript() {
+      this.$buefy.modal.open({
+        parent: this,
+        component: modalTunPostStartScript,
+        hasModalCard: true,
+        canCancel: true,
+        props: {
+          script: this.tunPostStartScript,
+        },
+        events: {
+          "update-script": (script) => {
+            this.tunPostStartScript = script;
+          },
+        },
+      });
+    },
     handleClickDnsSetting() {
       this.$buefy.modal.open({
         parent: this,
         component: modalDnsSetting,
         hasModalCard: true,
         canCancel: true,
+        props: {
+          dnsServers: this.dnsServers,
+          dnsMode: this.dnsMode,
+          nodeResolveDns: this.nodeResolveDns,
+        },
+        events: {
+          "update-dns": ({ dnsServers, dnsMode, nodeResolveDns }) => {
+            this.dnsServers = dnsServers;
+            this.dnsMode = dnsMode;
+            this.nodeResolveDns = nodeResolveDns;
+          },
+        },
       });
     },
   },
@@ -647,6 +650,11 @@ export default {
 .footer-absolute-left {
   position: absolute;
   left: 20px;
+}
+
+.footer-dns-button {
+  position: absolute;
+  left: 155px;
 }
 
 .left-border select {

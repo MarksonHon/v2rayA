@@ -106,8 +106,6 @@ export default {
     transparentType: "Transparent Proxy/System Proxy Implementation",
     logLevel: "Log Level",
     pacMode: "Traffic Splitting Mode of Rule Port",
-    preventDnsSpoofing: "جلوگیری از هک DNS",
-    specialMode: "حالت ویژه",
     mux: "Multiplex",
     autoUpdateSub: "بروزرسانی خودکار اشتراک ها",
     autoUpdateGfwlist: "بروزرسانی خودکار GFWList",
@@ -115,6 +113,10 @@ export default {
     ipForwardOn: "IP Forward",
     portSharingOn: "به اشتراک گذاری پورت",
     concurrency: "همزمانی",
+    tunPostStartScript: "TUN Post-Start Script",
+    tunStrictRoute: "TUN Strict Route",
+    tunAutoRoute: "TUN Auto Route",
+    tunPostStartScriptPlaceholder: "یک دستور در هر خط (زمانی که AutoRoute غیرفعال است):",
     options: {
       trace: "Trace",
       debug: "Debug",
@@ -128,9 +130,6 @@ export default {
       gfwlist: "فقط GFWList را پروکسی کن.",
       sameAsPacMode: "Traffic Splitting Mode is the Same as the Rule Port",
       customRouting: "Customized Routing",
-      antiDnsHijack: "Prevent DNS Hijack Only (fast)",
-      forwardDnsRequest: "Forward DNS Request",
-      doh: "DoH(dns-over-https)",
       default: "پیشفرض",
       on: "روشن",
       off: "خاموش",
@@ -141,7 +140,6 @@ export default {
         "هر چند وقت یکبار GFWList را آپدیت کن (واحد: ساعت(",
       dependTransparentMode: "Follows Transparent Proxy/System Proxy",
       closed: "خاموش",
-      advanced: "تنظیمات پیشرفته",
       leastPing: "اول سرور با پینگ کمتر",
     },
     messages: {
@@ -152,11 +150,6 @@ export default {
       transparentType:
         "★tproxy: support UDP, but not support docker. ★redirect: friendly for docker, but does not support UDP and need to occupy local port 53 for dns anti-pollution.",
       pacMode: `Here you can set the splitting traffic rule of the rule port. By default, "Rule of Splitting Traffic" port is 20172 and HTTP protocol.`,
-      preventDnsSpoofing:
-        "★Forward DNS Request: DNS requests will be forwarded by proxy server." +
-        "★DoH(dns-over-https, v2ray-core: 4.22.0+): DNS over HTTPS.",
-      specialMode:
-        "★supervisor：Monitor dns pollution, intercept in advance, use the sniffing mechanism of v2ray-core to prevent pollution. ★fakedns：Use the fakens strategy to speed up the resolving.",
       tcpFastOpen:
         "Simplify TCP handshake process to speed up connection establishment. Risk of emphasizing characteristics of packets exists. It may cause failed to connect if your system does not support it.",
       mux:
@@ -167,6 +160,12 @@ export default {
                           <p>TCP: {tcpPorts}</p>
                           <p>UDP: {udpPorts}</p>`,
       grpcShouldWithTls: `gRPC must be with TLS`,
+      tunPostStartScript:
+        "⚠ هشدار: دستورات اشتباه ممکن است سیستم عامل شما را آسیب بزند. این اسکریپت فقط زمانی که AutoRoute غیرفعال است اجرا میشود.",
+      tunStrictRoute:
+        "Force all traffic to be routed through the TUN interface, preventing bypass. Recommended on Windows.",
+      tunAutoRoute:
+        "Automatically configure the system routing table for TUN. When disabled, use the post-start script to set up routes manually.",
       ssPluginImpl:
         "★default: 'transport' for simple-obfs, 'chained' for v2ray-plugin." +
         "★chained: shadowsocks traffic will be redirect to standalone plugin." +
@@ -222,13 +221,19 @@ export default {
     ],
   },
   dns: {
-    title: "پیکربندی سرور DNS",
-    internalQueryServers: "Domain Query Servers",
-    externalQueryServers: "External Domain Query Servers",
-    messages: [
-      '"@:(dns.internalQueryServers)" are designed to be used to look up domain names in China, while "@:(dns.externalQueryServers)" be used to look up others.',
-      '"@:(dns.internalQueryServers)" will be used to look up all domain names if "@:(dns.externalQueryServers)" is empty.',
-    ],
+    title: "تنظیمات DNS",
+    queryStrategy: "استراتژی پرسش",
+    nodeResolveDns: "DNS حل نود",
+    nodeResolveDnsPlaceholder: "مثال: https://223.5.5.5/dns-query (هوست باید IP باشد, نه دامنه)",
+    nodeResolveDnsHint: "برای حل دامنه های نودهای پروکسی استفاده می‌شود. بخش هوست باید IP خالص باشد تا از وابستگی حلقه‌ای جلوگیری شود. DoH/DoT مجاز است اگر هوست IP باشد.",
+    server: "سرور DNS",
+    serverPlaceholder: "مثال: 119.29.29.29 یا https://dns.google/dns-query",
+    domains: "دامنه‌های پردازشی",
+    domainsPlaceholder: "هر خط یکی, مثال:\ngeosite:cn\ndomain:example.com\n(خالی = پشتیبان)",
+    outbound: "خروجی ترافیک DNS",
+    direct: "مستقیم",
+    proxy: "پروکسی",
+    addServer: "افزودن سرور",
   },
   egressPortWhitelist: {
     title: "Egress Port Whitelist",

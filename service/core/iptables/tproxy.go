@@ -8,7 +8,6 @@ import (
 
 	"github.com/v2rayA/v2rayA/common/cmds"
 	"github.com/v2rayA/v2rayA/core/v2ray/asset"
-	"github.com/v2rayA/v2rayA/db/configure"
 )
 
 var (
@@ -39,10 +38,8 @@ func init() {
 func (t *legacyTproxy) AddIPWhitelist(cidr string) {
 	// avoid duplication
 	t.RemoveIPWhitelist(cidr)
-	pos := 7
-	if configure.GetSettingNotNil().AntiPollution != configure.AntipollutionClosed {
-		pos += 3
-	}
+	// DNS hijacking (port 53) rules always occupy 3 extra positions at the top
+	pos := 10
 	if notSkip, _ := strconv.ParseBool(TproxyNotSkipBr); notSkip {
 		pos--
 	}
@@ -99,15 +96,12 @@ iptables -w 2 -t mangle -A TP_RULE -i docker+ -j RETURN
 	commands += `
 iptables -w 2 -t mangle -A TP_RULE -i veth+ -j RETURN
 iptables -w 2 -t mangle -A TP_RULE -i ppp+ -j RETURN
-`
-	if configure.GetSettingNotNil().AntiPollution != configure.AntipollutionClosed {
-		commands += `
+
 iptables -w 2 -t mangle -A TP_RULE -p udp --dport 53 -j TP_MARK
 iptables -w 2 -t mangle -A TP_RULE -p tcp --dport 53 -j TP_MARK
 iptables -w 2 -t mangle -A TP_RULE -m mark --mark 0x40/0xc0 -j RETURN
-`
-	}
 
+`
 	if IsEnabledTproxyWhiteIpGroups() {
 		whiteIpv4List, _ := GetWhiteListIPs()
 		for _, v := range whiteIpv4List {
@@ -154,14 +148,10 @@ ip6tables -w 2 -t mangle -A TP_RULE -m mark --mark 0x40/0xc0 -j RETURN
 ip6tables -w 2 -t mangle -A TP_RULE -i docker+ -j RETURN
 ip6tables -w 2 -t mangle -A TP_RULE -i veth+ -j RETURN
 ip6tables -w 2 -t mangle -A TP_RULE -i ppp+ -j RETURN
-`
-		if configure.GetSettingNotNil().AntiPollution != configure.AntipollutionClosed {
-			commands += `
 ip6tables -w 2 -t mangle -A TP_RULE -p udp --dport 53 -j TP_MARK
 ip6tables -w 2 -t mangle -A TP_RULE -p tcp --dport 53 -j TP_MARK
 ip6tables -w 2 -t mangle -A TP_RULE -m mark --mark 0x40/0xc0 -j RETURN
 `
-		}
 		if IsEnabledTproxyWhiteIpGroups() {
 			_, whiteIpv6List := GetWhiteListIPs()
 			for _, v := range whiteIpv6List {
@@ -336,12 +326,11 @@ func (t *nftTproxy) GetSetupCommands() Setter {
     }
 }
 `
-	if configure.GetSettingNotNil().AntiPollution != configure.AntipollutionClosed {
-		table = strings.ReplaceAll(table, "# anti-pollution", `
+	// Always enable DNS hijacking (port 53)
+	table = strings.ReplaceAll(table, "# anti-pollution", `
         meta l4proto { tcp, udp } th dport 53 jump tp_mark
         meta mark & 0xc0 == 0x40 return
 		`)
-	}
 
 	if !IsIPv6Supported() {
 		// drop ipv6 packets hooks

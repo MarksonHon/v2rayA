@@ -2,9 +2,11 @@ package v2ray
 
 import (
 	"fmt"
-	"github.com/v2rayA/v2rayA/core/specialMode"
 	"os"
 	"time"
+
+	"github.com/v2rayA/v2rayA/conf"
+	"github.com/v2rayA/v2rayA/db/configure"
 )
 
 const (
@@ -18,9 +20,13 @@ type ResolvHijacker struct {
 }
 
 func NewResolvHijacker() *ResolvHijacker {
+	setting := configure.GetSettingNotNil()
+	shouldListen := setting.Transparent != configure.TransparentClose &&
+		setting.TransparentType == configure.TransparentRedirect &&
+		!conf.GetEnvironmentConfig().Lite
 	hij := ResolvHijacker{
 		ticker:   time.NewTicker(checkInterval),
-		localDNS: specialMode.ShouldLocalDnsListen(),
+		localDNS: shouldListen,
 	}
 	hij.HijackResolv()
 	go func() {

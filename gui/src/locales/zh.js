@@ -112,10 +112,12 @@ export default {
     transparentType: "透明代理/系统代理实现方式",
     tunMode: "TUN模式",
     tunIPv6: "TUN IPv6",
+    tunPostStartScript: "TUN 启动后脚本",
+    tunStrictRoute: "TUN 严格路由",
+    tunAutoRoute: "TUN 自动路由",
+    tunPostStartScriptPlaceholder: "每行一条命令，留空则不执行（AutoRoute 关闭时生效）",
     logLevel: "日志等级",
     pacMode: "规则端口的分流模式",
-    preventDnsSpoofing: "防止DNS污染",
-    specialMode: "特殊模式",
     mux: "多路复用",
     autoUpdateSub: "自动更新订阅",
     autoUpdateGfwlist: "自动更新GFWList",
@@ -136,9 +138,6 @@ export default {
       gfwlist: "GFWList模式",
       sameAsPacMode: "分流规则与规则端口所选模式一致",
       customRouting: "自定义路由规则",
-      antiDnsHijack: "仅防止DNS劫持(快速)",
-      forwardDnsRequest: "转发DNS请求",
-      doh: "DoH(DNS-over-HTTPS)",
       default: "保持系统默认",
       on: "启用",
       off: "关闭",
@@ -148,7 +147,6 @@ export default {
       updateGfwlistAtIntervals: "每隔一段时间更新GFWList（单位：小时）",
       dependTransparentMode: "跟随透明代理/系统代理",
       closed: "关闭",
-      advanced: "自定义高级设置",
       leastPing: "最小时延优先",
     },
     messages: {
@@ -162,13 +160,14 @@ export default {
         "★FakeIP: 使用虚拟IP加速DNS解析，提高性能。★RealIP: 使用真实IP，更适合某些特殊应用。",
       tunIPv6:
         "开启后TUN接口将支持IPv6流量。注意：需要系统支持IPv6网络。",
+      tunPostStartScript:
+        "⚠ 警告：错误的命令可能损坏你的操作系统。此脚本仅在 AutoRoute 关闭时、TUN 启动后执行，可用于手动配置路由（例如 Windows 下添加默认路由）。",
+      tunStrictRoute:
+        "强制所有流量通过TUN接口路由，防止流量绕过代理。Windows下建议开启。",
+      tunAutoRoute:
+        "自动配置系统路由表，将流量引导至TUN接口。关闭时可使用启动后脚本手动配置路由。",
       pacMode:
         "该选项设置规则分流端口所使用的路由模式。默认情况下规则分流端口为20172，HTTP协议。",
-      preventDnsSpoofing:
-        "★转发DNS查询: 通过代理服务器转发DNS请求。" +
-        "★DoH(v2ray-core: 4.22.0+): DNS over HTTPS。",
-      specialMode:
-        "★supervisor：监控dns污染，提前拦截，利用v2ray-core的sniffing解决污染。★fakedns：使用fakedns策略加速解析。",
       tcpFastOpen:
         "简化TCP握手流程以加速建立连接，可能会增加封包的特征。若系统不支持可能会导致无法正常连接。",
       mux: "复用TCP连接以减少握手次数，但会影响吞吐量大的使用场景，如观看视频、下载、测速。当前仅支持vmess节点。可能会增加特征造成断流。",
@@ -234,13 +233,19 @@ export default {
     ],
   },
   dns: {
-    title: "配置DNS服务器",
-    internalQueryServers: "域名查询服务器",
-    externalQueryServers: "国外域名查询服务器",
-    messages: [
-      "“@:(dns.internalQueryServers)” 用于查询国内域名，而 “@:(dns.externalQueryServers)” 用于查询国外域名。",
-      "如果将 “@:(dns.externalQueryServers)” 留空，“@:(dns.internalQueryServers)” 将会负责查询所有域名。",
-    ],
+    title: "DNS 设置",
+    queryStrategy: "查询策略",
+    nodeResolveDns: "节点解析 DNS",
+    nodeResolveDnsPlaceholder: "如: https://223.5.5.5/dns-query（主机必须是纯 IP，不能用域名）",
+    nodeResolveDnsHint: "用于解析代理节点的域名。主机部分必须为 IP 地址，否则会产生循环解析依赖。支持 DoH/DoT，如 https://223.5.5.5/dns-query；不得使用 https://dns.google/dns-query 这类域名型地址。",
+    server: "DNS 服务器",
+    serverPlaceholder: "如: 119.29.29.29 或 https://dns.google/dns-query",
+    domains: "处理的域名",
+    domainsPlaceholder: "每行一个，如: geosite:cn\ndomain:example.com\n（留空=兜底）",
+    outbound: "DNS 流量出口",
+    direct: "直连",
+    proxy: "代理",
+    addServer: "添加服务器",
   },
   egressPortWhitelist: {
     title: "出方向端口白名单",

@@ -112,10 +112,12 @@ export default {
     transparentType: "Transparent Proxy/System Proxy Implementation",
     tunMode: "TUN Mode",
     tunIPv6: "TUN IPv6",
+    tunPostStartScript: "TUN Post-Start Script",
+    tunStrictRoute: "TUN Strict Route",
+    tunAutoRoute: "TUN Auto Route",
+    tunPostStartScriptPlaceholder: "One command per line, leave empty to do nothing (only active when AutoRoute is disabled)",
     logLevel: "Log Level",
     pacMode: "Traffic Splitting Mode of Rule Port",
-    preventDnsSpoofing: "Prevent DNS Spoofing",
-    specialMode: "Special Mode",
     mux: "Multiplex",
     autoUpdateSub: "Automatically Update Subscriptions",
     autoUpdateGfwlist: "Automatically Update GFWList",
@@ -137,9 +139,6 @@ export default {
       gfwlist: "Proxy only GFWList",
       sameAsPacMode: "Traffic Splitting Mode is the Same as the Rule Port",
       customRouting: "Customized Routing",
-      antiDnsHijack: "Prevent DNS Hijack Only (fast)",
-      forwardDnsRequest: "Forward DNS Request",
-      doh: "DoH(dns-over-https)",
       default: "Keep Default",
       on: "On",
       off: "Off",
@@ -149,7 +148,6 @@ export default {
       updateGfwlistAtIntervals: "Update GFWList Regularly (Unit: hour)",
       dependTransparentMode: "Follows Transparent Proxy/System Proxy",
       closed: "Off",
-      advanced: "Advanced Setting",
       leastPing: "Least Latency First",
     },
     messages: {
@@ -164,12 +162,13 @@ export default {
         "★FakeIP: Use fake IPs to accelerate DNS resolution and improve performance. ★RealIP: Use real IPs, more suitable for certain special applications.",
       tunIPv6:
         "Enable IPv6 traffic support in TUN interface. Note: Requires IPv6 network support from your system.",
+      tunPostStartScript:
+        "⚠ Warning: Incorrect commands may damage your operating system. This script runs only when AutoRoute is disabled, after TUN starts. Use it for manual route setup (e.g. adding a default route on Windows).",
+      tunStrictRoute:
+        "Force all traffic to be routed through the TUN interface, preventing bypass. Recommended on Windows.",
+      tunAutoRoute:
+        "Automatically configure the system routing table to direct traffic into the TUN interface. When disabled, use the post-start script to set up routes manually.",
       pacMode: `Here you can set the splitting traffic rule of the rule port. By default, "Rule of Splitting Traffic" port is 20172 and HTTP protocol.`,
-      preventDnsSpoofing:
-        "★Forward DNS Request: DNS requests will be forwarded by proxy server." +
-        "★DoH(dns-over-https, v2ray-core: 4.22.0+): DNS over HTTPS.",
-      specialMode:
-        "★supervisor：Monitor dns pollution, intercept in advance, use the sniffing mechanism of v2ray-core to prevent pollution. ★fakedns：Use the fakens strategy to speed up the resolving.",
       tcpFastOpen:
         "Simplify TCP handshake process to speed up connection establishment. Risk of emphasizing characteristics of packets exists. It may cause failed to connect if your system does not support it.",
       mux:
@@ -237,13 +236,19 @@ export default {
     ],
   },
   dns: {
-    title: "Configure DNS Server",
-    internalQueryServers: "Domain Query Servers",
-    externalQueryServers: "External Domain Query Servers",
-    messages: [
-      '"@:(dns.internalQueryServers)" are designed to be used to look up domain names in China, while "@:(dns.externalQueryServers)" be used to look up others.',
-      '"@:(dns.internalQueryServers)" will be used to look up all domain names if "@:(dns.externalQueryServers)" is empty.',
-    ],
+    title: "DNS Settings",
+    queryStrategy: "Query Strategy",
+    nodeResolveDns: "Node Resolve DNS",
+    nodeResolveDnsPlaceholder: "e.g. https://223.5.5.5/dns-query (host must be a plain IP, not a domain)",
+    nodeResolveDnsHint: "Used to resolve proxy node hostnames. The host part must be a plain IP address to avoid circular resolution. DoH/DoT URLs are allowed as long as the host is an IP, e.g. https://223.5.5.5/dns-query.",
+    server: "DNS Server",
+    serverPlaceholder: "e.g. 119.29.29.29 or https://dns.google/dns-query",
+    domains: "Matched Domains",
+    domainsPlaceholder: "One per line, e.g.:\ngeosite:cn\ndomain:example.com\n(empty = fallback)",
+    outbound: "DNS Traffic Outbound",
+    direct: "Direct",
+    proxy: "Proxy",
+    addServer: "Add Server",
   },
   egressPortWhitelist: {
     title: "Egress Port Whitelist",

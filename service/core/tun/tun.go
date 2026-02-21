@@ -18,6 +18,7 @@ type Tun interface {
 	SetIPv6(enabled bool)
 	SetStrictRoute(enabled bool)
 	SetAutoRoute(enabled bool)
+	SetPostScript(script string)
 }
 
 var Default = NewSingTun()

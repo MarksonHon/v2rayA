@@ -106,8 +106,6 @@ export default {
     transparentType: "Implementação do Proxy Transparente/Proxy do Sistema",
     logLevel: "Nível de Log",
     pacMode: "Modo de Divisão de Tráfego da Porta de Regra",
-    preventDnsSpoofing: "Prevenir Falsificação de DNS",
-    specialMode: "Modo Especial",
     mux: "Multiplexação",
     autoUpdateSub: "Atualizar Assinaturas Automaticamente",
     autoUpdateGfwlist: "Atualizar GFWList Automaticamente",
@@ -115,6 +113,10 @@ export default {
     ipForwardOn: "Encaminhamento de IP",
     portSharingOn: "Compartilhamento de Porta",
     concurrency: "Concorrência",
+    tunPostStartScript: "Script Pós-Inicialização TUN",
+    tunStrictRoute: "Rota Estrita TUN",
+    tunAutoRoute: "Rota Automática TUN",
+    tunPostStartScriptPlaceholder: "Um comando por linha (AutoRoute desativado):",
     options: {
       trace: "Trace",
       debug: "Debug",
@@ -129,9 +131,6 @@ export default {
       sameAsPacMode:
         "Modo de Divisão de Tráfego é o Mesmo que a Porta de Regra",
       customRouting: "Roteamento Personalizado",
-      antiDnsHijack: "Prevenir apenas sequestro de DNS (rápido)",
-      forwardDnsRequest: "Encaminhar Solicitação de DNS",
-      doh: "DoH(dns-over-https)",
       default: "Manter Padrão",
       on: "Ligado",
       off: "Desligado",
@@ -143,7 +142,6 @@ export default {
         "Atualizar GFWList Regularmente (Unidade: hora)",
       dependTransparentMode: "Segue Proxy Transparente/Proxy do Sistema",
       closed: "Desligado",
-      advanced: "Configuração Avançada",
       leastPing: "Menor Latência Primeiro",
     },
     messages: {
@@ -154,11 +152,6 @@ export default {
       transparentType:
         "★tproxy: suporta UDP, mas não suporta docker. ★redirect: amigável para docker, mas não suporta UDP e precisa ocupar a porta local 53 para dns anti-poluição.",
       pacMode: `Aqui você pode definir a regra de divisão de tráfego da porta de regra. Por padrão, a "Regra de Divisão de Tráfego" porta é 20172 e protocolo HTTP.`,
-      preventDnsSpoofing:
-        "★Encaminhar Solicitação de DNS: As solicitações de DNS serão encaminhadas pelo servidor proxy." +
-        "★DoH(dns-over-https, v2ray-core: 4.22.0+): DNS sobre HTTPS.",
-      specialMode:
-        "★supervisor：Monitora a poluição dns, intercepta antecipadamente, usa o mecanismo de sniffing do v2ray-core para prevenir a poluição. ★fakedns：Use a estratégia fakens para acelerar a resolução.",
       tcpFastOpen:
         "Simplifica o processo de handshake do TCP para acelerar o estabelecimento da conexão. Risco de enfatizar as características dos pacotes existe. Pode causar falha na conexão se o seu sistema não suportar.",
       mux:
@@ -169,6 +162,12 @@ export default {
                           <p>TCP: {tcpPorts}</p>
                           <p>UDP: {udpPorts}</p>`,
       grpcShouldWithTls: `gRPC deve estar com TLS`,
+      tunPostStartScript:
+        "⚠ Aviso: Comandos incorretos podem danificar seu sistema operacional. Este script é executado após o início do TUN quando AutoRoute está desativado.",
+      tunStrictRoute:
+        "Força todo o tráfego a ser roteado pelo TUN, impedindo contornos. Recomendado no Windows.",
+      tunAutoRoute:
+        "Configura automaticamente a tabela de roteamento do sistema para o TUN. Quando desativado, use o script pós-início para configurar rotas manualmente.",
       ssPluginImpl:
         "★default: 'transport' para simple-obfs, 'chained' para v2ray-plugin." +
         "★chained: o tráfego shadowsocks será redirecionado para o plugin standalone." +
@@ -225,13 +224,19 @@ export default {
     ],
   },
   dns: {
-    title: "Configurar Servidor DNS",
-    internalQueryServers: "Servidores de Consulta de Domínio Internos",
-    externalQueryServers: "Servidores de Consulta de Domínio Externos",
-    messages: [
-      '"@:(dns.internalQueryServers)" são projetados para serem usados para pesquisar nomes de domínio na China, enquanto "@:(dns.externalQueryServers)" é usado para pesquisar outros.',
-      '"@:(dns.internalQueryServers)" será usado para pesquisar todos os nomes de domínio se "@:(dns.externalQueryServers)" estiver vazio.',
-    ],
+    title: "Configurações de DNS",
+    queryStrategy: "Estratégia de Consulta",
+    nodeResolveDns: "DNS de Resolução de Nó",
+    nodeResolveDnsPlaceholder: "Ex.: https://223.5.5.5/dns-query (host deve ser IP, não domínio)",
+    nodeResolveDnsHint: "Usado para resolver hostnames dos nós de proxy. O host deve ser um endereço IP puro para evitar dependência de resolução cíclica. DoH/DoT são permitidos se o host for IP.",
+    server: "Servidor DNS",
+    serverPlaceholder: "Ex.: 119.29.29.29 ou https://dns.google/dns-query",
+    domains: "Domínios Correspondentes",
+    domainsPlaceholder: "Um por linha, ex.:\ngeosite:cn\ndomain:example.com\n(vazio = fallback)",
+    outbound: "Saída de Tráfego DNS",
+    direct: "Direto",
+    proxy: "Proxy",
+    addServer: "Adicionar Servidor",
   },
   egressPortWhitelist: {
     title: "Lista de Portas de Saída",

@@ -132,6 +132,13 @@ func NewProcess(tmpl *Template,
 	}()
 	// ports to check
 	portList := []string{strconv.Itoa(tmpl.ApiPort)}
+	// For TUN modes the SOCKS5 inbound at 52345 must be ready before TUN starts
+	// forwarding traffic; otherwise the first connections are refused and dropped.
+	if IsTransparentOn(tmpl.Setting) &&
+		(tmpl.Setting.TransparentType == configure.TransparentGvisorTun ||
+			tmpl.Setting.TransparentType == configure.TransparentSystemTun) {
+		portList = append(portList, "52345")
+	}
 	for _, plu := range tmpl.Plugins {
 		_, port, err := net.SplitHostPort(plu.ListenAddr())
 		if err != nil {

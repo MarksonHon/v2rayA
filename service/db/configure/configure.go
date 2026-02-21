@@ -210,9 +210,6 @@ func GetSettingNotNil() *Setting {
 		_ = jsoniter.Unmarshal(b, r)
 	}
 	_ = common.FillEmpty(r, NewSetting())
-	if r.SpecialMode == "" {
-		r.SpecialMode = SpecialModeNone
-	}
 	if r.TransparentType == "" {
 		r.TransparentType = TransparentRedirect
 	}

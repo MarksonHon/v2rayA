@@ -21,14 +21,12 @@ import (
 	"github.com/mohae/deepcopy"
 	"github.com/v2rayA/RoutingA"
 	"github.com/v2rayA/v2rayA/common"
-	"github.com/v2rayA/v2rayA/common/antiPollution"
 	"github.com/v2rayA/v2rayA/common/netTools/netstat"
 	"github.com/v2rayA/v2rayA/common/netTools/ports"
 	"github.com/v2rayA/v2rayA/conf"
 	"github.com/v2rayA/v2rayA/core/coreObj"
 	"github.com/v2rayA/v2rayA/core/iptables"
 	"github.com/v2rayA/v2rayA/core/serverObj"
-	"github.com/v2rayA/v2rayA/core/specialMode"
 	"github.com/v2rayA/v2rayA/core/tun"
 	"github.com/v2rayA/v2rayA/core/v2ray/asset"
 	"github.com/v2rayA/v2rayA/core/v2ray/where"
@@ -112,46 +110,42 @@ type Addr struct {
 	udp  bool
 }
 
-// ExtractDnsServerHostsFromTemplate extracts all DNS server hostnames/IPs from v2ray Template's DNS configuration
-// This reads from the actual configured DNS servers, respecting user's settings (Advanced or preset modes)
-// Returns a list of hostnames that may need resolution (domains or IPs)
-func ExtractDnsServerHostsFromTemplate(tmpl *Template) []string {
-	if tmpl == nil || tmpl.DNS == nil || len(tmpl.DNS.Servers) == 0 {
+// ExtractDirectDnsServerHosts returns the hostnames/IPs of DNS servers whose outbound is NOT "proxy".
+// Only these servers need to be excluded from TUN routing (direct traffic must bypass TUN;
+// proxy-bound DNS servers should remain inside TUN so they are proxied correctly).
+// The nodeResolveDns bootstrap server is always direct and is always included.
+func ExtractDirectDnsServerHosts(setting *configure.Setting) []string {
+	if setting == nil {
 		return nil
 	}
-
-	var hosts []string
 	seen := make(map[string]bool)
-
-	for _, server := range tmpl.DNS.Servers {
-		var host string
-
-		switch s := server.(type) {
-		case string:
-			// Simple string like "8.8.8.8" or "https://dns.google/dns-query"
-			addr := parseDnsAddr(s)
-			host = addr.host
-		case coreObj.DnsServer:
-			// DnsServer object with Address field
-			if s.Address != "" {
-				addr := parseDnsAddr(s.Address)
-				host = addr.host
-			}
-		case map[string]interface{}:
-			// JSON object: {"address": "1.1.1.1", "port": 53, ...}
-			if addrVal, ok := s["address"]; ok {
-				if addrStr, ok := addrVal.(string); ok {
-					addr := parseDnsAddr(addrStr)
-					host = addr.host
-				}
-			}
+	var hosts []string
+	add := func(addr string) {
+		h := parseDnsAddr(addr).host
+		if h == "" || h == "localhost" || h == "fakedns" || seen[h] {
+			return
 		}
-
-		if host != "" && host != "localhost" && host != "fakedns" && !seen[host] {
-			hosts = append(hosts, host)
-			seen[host] = true
-		}
+		seen[h] = true
+		hosts = append(hosts, h)
 	}
+
+	for _, entry := range setting.DnsServers {
+		if entry.Address == "" {
+			continue
+		}
+		// "proxy" DNS servers should NOT be excluded — their traffic must go through TUN/proxy.
+		if entry.Outbound == "proxy" {
+			continue
+		}
+		add(entry.Address)
+	}
+
+	// nodeResolveDns is always routed direct; include it unconditionally.
+	nrDns := setting.NodeResolveDns
+	if nrDns == "" {
+		nrDns = "https://223.5.5.5/dns-query"
+	}
+	add(nrDns)
 
 	return hosts
 }
@@ -216,7 +210,8 @@ func parseAdvancedDnsServers(lines []string, domains []string) (domainNameServer
 				u.Scheme = "quic+local"
 				dns.Val = u.String()
 			}
-			if domains != nil {
+			// 有 domains 限制则用 ServerObject，否则直接用字符串（文档规范）
+			if len(domains) > 0 {
 				domainNameServers = append(domainNameServers, coreObj.DnsServer{
 					Address: dns.Val,
 					Domains: domains,
@@ -227,11 +222,23 @@ func parseAdvancedDnsServers(lines []string, domains []string) (domainNameServer
 		} else {
 			addr := parseDnsAddr(dns.Val)
 			p, _ := strconv.Atoi(addr.port)
-			domainNameServers = append(domainNameServers, coreObj.DnsServer{
-				Address: addr.host,
-				Port:    p,
-				Domains: domains,
-			})
+			if len(domains) > 0 {
+				domainNameServers = append(domainNameServers, coreObj.DnsServer{
+					Address: addr.host,
+					Port:    p,
+					Domains: domains,
+				})
+			} else {
+				// IP:port 形式但无 domains：用对象只保留地址和端口
+				if p != 0 && p != 53 {
+					domainNameServers = append(domainNameServers, coreObj.DnsServer{
+						Address: addr.host,
+						Port:    p,
+					})
+				} else {
+					domainNameServers = append(domainNameServers, addr.host)
+				}
+			}
 		}
 
 		if dns.Val == "localhost" {
@@ -303,114 +310,84 @@ func (t *Template) FirstProxyOutboundName(filter func(outboundName string, isGro
 
 func (t *Template) setDNS(outbounds []serverInfo, supportUDP map[string]bool) (routing []coreObj.RoutingRule, err error) {
 	firstOutboundTag, _ := t.FirstProxyOutboundName(nil)
-	firstUDPSupportedOutboundTag, _ := t.FirstProxyOutboundName(func(outboundName string, isGroup bool) bool {
-		return supportUDP[outboundName]
+
+	// 解析 DNS 查询策略
+	queryStrategy := string(t.Setting.DnsMode)
+	if queryStrategy == "" {
+		queryStrategy = string(configure.DnsQueryStrategyUseIP)
+	}
+
+	t.DNS = &coreObj.DNS{
+		Tag:           "dns",
+		QueryStrategy: queryStrategy,
+	}
+
+	// 使用用户自定义的 DNS 服务器列表
+	// 复制一份，避免排序污染原始设置
+	dnsEntries := make([]configure.DnsServerEntry, len(t.Setting.DnsServers))
+	copy(dnsEntries, t.Setting.DnsServers)
+	// 无 domains 的服务器（兜底）排在前面，有 domains 的server排在后面
+	// v2fly DNS：domain-specific 服务器在命中域名时优先，但'兜底服务器'需要是整个列表中
+	// 第一个无 domains 限制的条目，因此必须确保兜底条目不被排在 domain-specific 条目之后遮蔽。
+	sort.SliceStable(dnsEntries, func(i, j int) bool {
+		return len(dnsEntries[i].Domains) == 0 && len(dnsEntries[j].Domains) > 0
 	})
-	outboundTags := t.outNames()
-	var internal, external, all []string
-	var allThroughProxy = false
-	if t.Setting.AntiPollution == configure.AntipollutionAdvanced {
-		// advanced
-		internal = configure.GetInternalDnsListNotNil()
-		external = configure.GetExternalDnsListNotNil()
-		all = append(all, internal...)
-		all = append(all, external...)
-		if len(external) == 0 {
-			allThroughProxy = true
-			for _, line := range internal {
-				dns := ParseAdvancedDnsLine(line)
-				if dns.Out == "direct" {
-					allThroughProxy = false
-					break
-				}
-			}
-		}
-		// check if outbounds exist
-		for _, line := range all {
-			dns := ParseAdvancedDnsLine(line)
-			if _, ok := outboundTags[dns.Out]; !ok {
-				return nil, fmt.Errorf(`your DNS rule "%v" depends on the outbound "%v", thus you should select at least one server in this outbound`, line, dns.Out)
-			}
-		}
-		// check UDP support
-		for _, line := range all {
-			dns := ParseAdvancedDnsLine(line)
-			if dns.Out == "direct" || dns.Out == "block" {
+	if len(dnsEntries) == 0 {
+		// 降级默认：仅使用 localhost
+		t.DNS.Servers = []interface{}{"localhost"}
+	} else {
+		for _, entry := range dnsEntries {
+			if entry.Address == "" {
 				continue
 			}
-			if parseDnsAddr(dns.Val).udp && !supportUDP[dns.Out] {
-				return nil, fmt.Errorf(`due to the protocol of outbound "%v" with no UDP supported, please use tcp:// and doh:// DNS rule instead, or change the connected server`, dns.Out)
+			// 确定出站 tag
+			outTag := entry.Outbound
+			if outTag == "proxy" {
+				// 使用第一个代理出站
+				outTag = firstOutboundTag
 			}
-		}
-	} else if t.Setting.AntiPollution != configure.AntipollutionClosed {
-		// preset
-		internal = []string{"223.6.6.6 -> direct", "119.29.29.29 -> direct"}
-		switch t.Setting.AntiPollution {
-		case configure.AntipollutionAntiHijack:
-			break
-		case configure.AntipollutionDnsForward:
-			if firstUDPSupportedOutboundTag != "" {
-				external = antiPollution.GetExternalDNS(firstUDPSupportedOutboundTag)
+			if outTag == "" {
+				outTag = "direct"
+			}
+
+			if len(entry.Domains) == 0 {
+				// 无 domains 限制时直接用字符串，符合 v2fly DNS 文档规范
+				// https://www.v2fly.org/config/dns.html#dnsobject
+				t.DNS.Servers = append(t.DNS.Servers, entry.Address)
 			} else {
-				external = []string{"tcp://dns.opendns.com:5353 -> " + firstOutboundTag, "tcp://dns.google -> " + firstOutboundTag}
+				t.DNS.Servers = append(t.DNS.Servers, coreObj.DnsServer{
+					Address: entry.Address,
+					Domains: entry.Domains,
+				})
 			}
-		case configure.AntipollutionDoH:
-			external = []string{"https://doh.pub/dns-query -> direct", "https://rubyfish.cn/dns-query -> direct"}
-		}
-	}
-	True := true
-	t.DNS = &coreObj.DNS{
-		Tag: "dns",
-	}
-	if allThroughProxy {
-		// guess the user want to protect the privacy
-		t.DNS.DisableFallback = &True
-	}
-	if t.Setting.AntiPollution != configure.AntipollutionClosed {
-		if len(external) == 0 {
-			// not split traffic
-			d, r := parseAdvancedDnsServers(internal, nil)
-			t.DNS.Servers = append(t.DNS.Servers, d...)
-			routing = append(routing, r...)
-		} else {
-			// split traffic
-			d, r := parseAdvancedDnsServers(external, nil)
-			t.DNS.Servers = append(t.DNS.Servers, d...)
-			routing = append(routing, r...)
 
-			d, r = parseAdvancedDnsServers(internal, []string{"geosite:cn"})
-			t.DNS.Servers = append(t.DNS.Servers, d...)
-			routing = append(routing, r...)
+			// 为该 DNS 服务器的流量生成路由规则（localhost 不需要路由）
+			if entry.Address == "localhost" {
+				continue
+			}
+			addr := parseDnsAddr(entry.Address)
+			if addr.host == "" {
+				continue
+			}
+			if net.ParseIP(addr.host) != nil {
+				routing = append(routing, coreObj.RoutingRule{
+					Type: "field", OutboundTag: outTag, IP: []string{addr.host}, Port: addr.port,
+				})
+			} else {
+				routing = append(routing, coreObj.RoutingRule{
+					Type: "field", OutboundTag: outTag, Domain: []string{addr.host}, Port: addr.port,
+				})
+			}
 		}
 	}
 
-	// fakedns
-	if specialMode.ShouldUseFakeDns() {
-		t.DNS.Servers = append([]interface{}{
-			"fakedns",
-			coreObj.DnsServer{
-				Address: "fakedns", Domains: []string{"geosite:cn"},
-			},
-		}, t.DNS.Servers...)
-	}
-
-	if t.DNS.Servers == nil {
-		t.DNS.Servers = []interface{}{"localhost"}
-	}
+	// 收集需要 DNS 预解析的域名（出站服务器域名 + DNS 服务器本身的域名）
 	var domainsToLookup []string
-	// Collect domains from outbound servers
 	for _, v := range outbounds {
 		if net.ParseIP(v.Info.GetHostname()) == nil {
 			domainsToLookup = append(domainsToLookup, v.Info.GetHostname())
 		}
 	}
-	// Collect domains from routing rules
-	for _, r := range routing {
-		if len(r.Domain) > 0 {
-			domainsToLookup = append(domainsToLookup, r.Domain...)
-		}
-	}
-	// Collect domains from DNS servers themselves (for DoT/DoH)
 	for _, srv := range t.DNS.Servers {
 		var dnsAddr string
 		switch s := srv.(type) {
@@ -422,30 +399,37 @@ func (t *Template) setDNS(outbounds []serverInfo, supportUDP map[string]bool) (r
 		if dnsAddr == "" || dnsAddr == "localhost" || dnsAddr == "fakedns" {
 			continue
 		}
-		// Parse DNS address to extract hostname
 		addr := parseDnsAddr(dnsAddr)
 		if net.ParseIP(addr.host) == nil {
-			// DNS server address is a domain, need to resolve it
 			domainsToLookup = append(domainsToLookup, addr.host)
 		}
 	}
 	domainsToLookup = common.Deduplicate(domainsToLookup)
 	if len(domainsToLookup) > 0 {
-		// Use Google 8.8.8.8 and Tencent 119.29.29.29 to resolve these critical domains
-		var dnsList []string
-		dnsList = []string{
-			"8.8.8.8 -> " + firstOutboundTag,
-			"119.29.29.29 -> direct",
+		// 优先使用用户配置的节点解析 DNS；若留空则回退到内置默认
+		nodeResolveDns := t.Setting.NodeResolveDns
+		if nodeResolveDns == "" {
+			nodeResolveDns = "https://223.5.5.5/dns-query"
 		}
-		d, r := parseAdvancedDnsServers(dnsList, domainsToLookup)
+		// 校验：nodeResolveDns 的主机部分必须是 IP，不得是域名（循环依赖）
+		nrAddr := parseDnsAddr(nodeResolveDns)
+		if net.ParseIP(nrAddr.host) == nil {
+			return nil, fmt.Errorf("nodeResolveDns %q 的主机部分 %q 不是合法 IP 地址；"+
+				"请使用 IP 地址，例如 https://223.5.5.5/dns-query，避免循环解析依赖", nodeResolveDns, nrAddr.host)
+		}
+		bootstrapList := []string{
+			nodeResolveDns + " -> direct",
+		}
+		d, r := parseAdvancedDnsServers(bootstrapList, domainsToLookup)
 		t.DNS.Servers = append(t.DNS.Servers, d...)
 		routing = append(routing, r...)
 	}
-	// hard code for SNI problem like apple pushing
+
+	// 硬编码 Apple Push 的 SNI 修复 (#495 #479)
 	t.DNS.Hosts = make(coreObj.Hosts)
 	t.DNS.Hosts["courier.push.apple.com"] = []string{"1-courier.push.apple.com"}
 
-	// deduplicate
+	// 去重路由规则
 	strRouting := make([]string, 0, len(routing))
 	for _, r := range routing {
 		b, err := jsoniter.Marshal(r)
@@ -492,25 +476,20 @@ func (t *Template) setDNSRouting(routing []coreObj.RoutingRule, supportUDP map[s
 	t.Routing.Rules = append(t.Routing.Rules,
 		coreObj.RoutingRule{Type: "field", InboundTag: []string{"dns-in"}, OutboundTag: "direct"},
 	)
-	// Always route TUN dokodemo DNS inbound to dns-out
+	// 始终将 TUN/Redirect/TProxy 的 dokodemo-door DNS 入站（tun-dns-in，端口 6053）转发到 dns-out
 	t.Routing.Rules = append(t.Routing.Rules,
 		coreObj.RoutingRule{Type: "field", InboundTag: []string{"tun-dns-in"}, OutboundTag: "dns-out"},
-		// Explicitly route traffic coming from the TUN DNS listener (port 6053) into the DNS module.
 		coreObj.RoutingRule{Type: "field", Port: strconv.Itoa(tun.TunDNSListenPort), OutboundTag: "dns-out"},
 	)
 	setting := t.Setting
-	if setting.AntiPollution != configure.AntipollutionClosed {
-		dnsOut := coreObj.RoutingRule{ // hijack traffic to port 53
+	// 将 53 端口的 DNS 查询劫持到 dns-out（始终开启，配合新 DNS 模块）
+	{
+		dnsOut := coreObj.RoutingRule{
 			Type:        "field",
 			Port:        "53",
 			OutboundTag: "dns-out",
 		}
 		inTags := []string{"tun-dns-in"}
-		if specialMode.ShouldLocalDnsListen() {
-			if couldListenLocalhost, _ := specialMode.CouldLocalDnsListen(); couldListenLocalhost {
-				inTags = append(inTags, "dns-in")
-			}
-		}
 		dnsOut.InboundTag = inTags
 		t.Routing.Rules = append(t.Routing.Rules, dnsOut)
 	}
@@ -1041,17 +1020,12 @@ func (t *Template) setDualStack() {
 		hasDnsIn := false
 		for i := range t.Inbounds {
 			if t.Inbounds[i].Tag == "dns-in" {
-				if couldListenLocalhost, e := specialMode.CouldLocalDnsListen(); couldListenLocalhost && e != nil {
-					// listen only 127.2.0.17
-					t.Inbounds[i].Listen = "127.2.0.17"
-				} else {
-					// listen both 0.0.0.0 and 127.2.0.17
-					localDnsInbound := t.Inbounds[i]
-					localDnsInbound.Listen = "127.2.0.17"
-					localDnsInbound.Tag = "dns-in-local"
-					t.Inbounds = append(t.Inbounds, localDnsInbound)
-					hasDnsIn = true
-				}
+				// listen both 0.0.0.0 and 127.2.0.17
+				localDnsInbound := t.Inbounds[i]
+				localDnsInbound.Listen = "127.2.0.17"
+				localDnsInbound.Tag = "dns-in-local"
+				t.Inbounds = append(t.Inbounds, localDnsInbound)
+				hasDnsIn = true
 				break
 			}
 		}
@@ -1068,15 +1042,7 @@ func (t *Template) setDualStack() {
 	}
 }
 func (t *Template) setInboundFakeDnsDestOverride() {
-	if !specialMode.ShouldUseFakeDns() {
-		return
-	}
-	for i := range t.Inbounds {
-		if t.Inbounds[i].Sniffing.Enabled == false {
-			continue
-		}
-		t.Inbounds[i].Sniffing.DestOverride = []string{"fakedns"}
-	}
+	// FakeIP via special mode has been removed; TUN FakeIP is handled by TunFakeIP setting.
 }
 
 func (t *Template) appendDNSOutbound() {
@@ -1311,6 +1277,18 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 		switch t.Setting.TransparentType {
 		case configure.TransparentTproxy, configure.TransparentRedirect:
 			t.AppendDokodemoTProxy(string(t.Setting.TransparentType), 52345, "transparent")
+			// 在 Redirect/TProxy 模式下也添加 6053 端口的任意门入站，用于接收 DNS 查询
+			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
+				Port:     tun.TunDNSListenPort,
+				Protocol: "dokodemo-door",
+				Listen:   "0.0.0.0",
+				Settings: &coreObj.InboundSettings{
+					Network: "tcp,udp",
+					Address: "8.8.8.8",
+					Port:    53,
+				},
+				Tag: "tun-dns-in",
+			})
 		case configure.TransparentGvisorTun, configure.TransparentSystemTun:
 			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
 				Port:     52345,
@@ -1352,25 +1330,24 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 		}
 
 	}
-	if specialMode.ShouldLocalDnsListen() {
-		if couldListenLocalhost, _ := specialMode.CouldLocalDnsListen(); couldListenLocalhost {
-			// FIXME: xray cannot use fakedns+others (2021-07-17)
-			// set up a solo dokodemo-door for dns
-			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
-				Port:     53,
-				Protocol: "dokodemo-door",
-				Listen:   "0.0.0.0",
-				Settings: &coreObj.InboundSettings{
-					Network: "udp",
-					// the non-A/AAAA/CNAME problem has been fixed by the setting in DNS outbound.
-					// so the Address here is innocuous.
-					// related commit: https://github.com/v2rayA/v2rayA/commit/ecbf915d4be8b9066955a21059519266bcca6b92
-					Address: "2.0.1.7",
-					Port:    53,
-				},
-				Tag: "dns-in",
-			})
-		}
+	if setting.Transparent != configure.TransparentClose &&
+		setting.TransparentType == configure.TransparentRedirect &&
+		!conf.GetEnvironmentConfig().Lite {
+		// set up a solo dokodemo-door for dns for redirect mode
+		t.Inbounds = append(t.Inbounds, coreObj.Inbound{
+			Port:     53,
+			Protocol: "dokodemo-door",
+			Listen:   "0.0.0.0",
+			Settings: &coreObj.InboundSettings{
+				Network: "udp",
+				// the non-A/AAAA/CNAME problem has been fixed by the setting in DNS outbound.
+				// so the Address here is innocuous.
+				// related commit: https://github.com/v2rayA/v2rayA/commit/ecbf915d4be8b9066955a21059519266bcca6b92
+				Address: "2.0.1.7",
+				Port:    53,
+			},
+			Tag: "dns-in",
+		})
 	}
 
 	// 设置域名嗅探

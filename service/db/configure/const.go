@@ -11,10 +11,19 @@ type (
 	DefaultYesNo            string
 	TransparentMode         string
 	TransparentType         string
-	Antipollution           string
-	SpecialMode             string
 	InboundSniffing         string
+	DnsQueryStrategy        string
 )
+
+// DnsServerEntry 表示一条用户自定义的 DNS 服务器规则
+type DnsServerEntry struct {
+	// Address: DNS 服务器地址，支持 IP、tcp://host:port、https://host/dns-query 等格式
+	Address string `json:"address"`
+	// Domains: 该服务器负责处理的域名列表，空则表示处理所有其他查询
+	Domains []string `json:"domains"`
+	// Outbound: DNS 查询走哪个出站，"direct" 或 "proxy"（对应第一个代理 outbound）
+	Outbound string `json:"outbound"`
+}
 
 const (
 	TransparentClose      = TransparentMode("close")
@@ -65,15 +74,10 @@ const (
 	InboundSniffingHttpTLS     = InboundSniffing("http,tls")
 	InboundSniffingHttpTlsQuic = InboundSniffing("http,tls,quic")
 
-	AntipollutionDnsForward = Antipollution("dnsforward")
-	AntipollutionDoH        = Antipollution("doh")
-	AntipollutionAntiHijack = Antipollution("none") // 历史原因，none代表“仅防止dns劫持”，不代表关闭
-	AntipollutionClosed     = Antipollution("closed")
-	AntipollutionAdvanced   = Antipollution("advanced") // 自定义
-
-	SpecialModeNone       = SpecialMode("none")
-	SpecialModeSupervisor = SpecialMode("supervisor")
-	SpecialModeFakeDns    = SpecialMode("fakedns")
+	// DNS 查询策略（对应 v2ray DnsObject.queryStrategy）
+	DnsQueryStrategyUseIP   = DnsQueryStrategy("UseIP")
+	DnsQueryStrategyUseIPv4 = DnsQueryStrategy("UseIPv4")
+	DnsQueryStrategyUseIPv6 = DnsQueryStrategy("UseIPv6")
 )
 
 const (
