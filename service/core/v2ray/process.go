@@ -32,6 +32,7 @@ type Process struct {
 	mutex          sync.Mutex
 	proc           *os.Process
 	procCancel     func() // cancel func for proc and pluginManagers
+	procWaitDone   chan struct{}
 	pluginManagers []*os.Process
 	template       *Template
 	tag2WhichIndex map[string]int
@@ -42,7 +43,8 @@ func NewProcess(tmpl *Template,
 	postUnexpectedStop func(p *Process),
 ) (*Process, error) {
 	process := &Process{
-		template: tmpl,
+		template:     tmpl,
+		procWaitDone: make(chan struct{}),
 	}
 	if tmpl.MultiObservatory != nil {
 		// NOTICE: tag2WhichIndex is reliable because once connected servers are changed when v2ray is running,
@@ -111,6 +113,9 @@ func NewProcess(tmpl *Template,
 	process.proc = proc
 	var unexpectedExiting bool
 	go func() {
+		if process.procWaitDone != nil {
+			defer close(process.procWaitDone)
+		}
 		p, e := proc.Wait()
 		if process.procCancel == nil {
 			// canceled by v2rayA
@@ -208,11 +213,19 @@ func (p *Process) Close() error {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	if p.procCancel != nil {
+		waitCh := p.procWaitDone
 		p.procCancel()
 		p.procCancel = nil
 		err := p.template.Close()
 		if err != nil {
 			return err
+		}
+		if waitCh != nil {
+			select {
+			case <-waitCh:
+			case <-time.After(5 * time.Second):
+				log.Warn("Timed out waiting for v2ray-core to exit")
+			}
 		}
 		return nil
 	} else {

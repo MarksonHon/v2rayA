@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -19,7 +20,21 @@ import (
 	"github.com/v2rayA/v2rayA/pkg/util/privilege"
 )
 
-var platformEnvOnce sync.Once
+var (
+	platformEnvOnce   sync.Once
+	windowsEnvPattern = regexp.MustCompile(`%([A-Za-z0-9_()]+)%`)
+)
+
+func expandEnvVars(val string) string {
+	expanded := os.ExpandEnv(val)
+	return windowsEnvPattern.ReplaceAllStringFunc(expanded, func(match string) string {
+		parts := windowsEnvPattern.FindStringSubmatch(match)
+		if len(parts) != 2 {
+			return match
+		}
+		return os.Getenv(parts[1])
+	})
+}
 
 func loadPlatformEnv() error {
 	var loadErr error
@@ -49,6 +64,8 @@ func loadPlatformEnv() error {
 		if envFilePath == "" {
 			return
 		}
+
+		envFilePath = expandEnvVars(envFilePath)
 
 		absPath, err := filepath.Abs(envFilePath)
 		if err != nil {
@@ -94,6 +111,8 @@ func loadPlatformEnv() error {
 					value = value[1 : len(value)-1]
 				}
 			}
+
+			value = expandEnvVars(value)
 
 			if err := os.Setenv(key, value); err != nil {
 				log.Warn("Failed to set env var %s: %v", key, err)
