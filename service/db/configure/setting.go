@@ -1,8 +1,6 @@
 package configure
 
 import (
-	"runtime"
-
 	"github.com/v2rayA/v2rayA/common"
 	"github.com/v2rayA/v2rayA/core/ipforward"
 	"github.com/v2rayA/v2rayA/pkg/util/log"
@@ -82,13 +80,9 @@ type CustomPac struct {
 	RoutingRules     []RoutingRule           `json:"routingRules"`
 }
 
-// defaultTunPostStartScript returns the default post-start script for the current OS.
-// On Windows it adds the default route through the TUN gateway (current v2rayA behaviour).
-// On all other platforms an empty script is used because AutoRoute handles routing.
+// defaultTunPostStartScript returns the default post-start script.
+// Hev handles routing internally; leave empty to avoid platform-specific side effects.
 func defaultTunPostStartScript() string {
-	if runtime.GOOS == "windows" {
-		return "route add 0.0.0.0 mask 0.0.0.0 172.19.0.2 metric 1"
-	}
 	return ""
 }
 

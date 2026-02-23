@@ -140,8 +140,7 @@ func NewProcess(tmpl *Template,
 	// For TUN modes the SOCKS5 inbound at 52345 must be ready before TUN starts
 	// forwarding traffic; otherwise the first connections are refused and dropped.
 	if IsTransparentOn(tmpl.Setting) &&
-		(tmpl.Setting.TransparentType == configure.TransparentGvisorTun ||
-			tmpl.Setting.TransparentType == configure.TransparentSystemTun) {
+		tmpl.Setting.TransparentType == configure.TransparentHevTun {
 		portList = append(portList, "52345")
 	}
 	for _, plu := range tmpl.Plugins {

@@ -7,6 +7,7 @@ type Stack string
 const (
 	StackGvisor = Stack("gvisor")
 	StackSystem = Stack("system")
+	StackHev    = Stack("hev")
 )
 
 type Tun interface {
@@ -21,4 +22,5 @@ type Tun interface {
 	SetPostScript(script string)
 }
 
-var Default = NewSingTun()
+// Default is the global TUN runner (Hev-based)
+var Default = NewHevTun()

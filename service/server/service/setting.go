@@ -12,12 +12,23 @@ import (
 	"github.com/v2rayA/v2rayA/pkg/util/log"
 )
 
+// normalizeTransparentType collapses legacy tun values into the unified Hev tun type.
+func normalizeTransparentType(t configure.TransparentType) configure.TransparentType {
+	switch t {
+	case configure.TransparentGvisorTun, configure.TransparentSystemTun, configure.TransparentHevTun:
+		return configure.TransparentHevTun
+	default:
+		return t
+	}
+}
+
 func GetSetting() *configure.Setting {
 	s := configure.GetSettingNotNil()
 	if s == nil {
 		s = configure.NewSetting()
 		_ = configure.SetSetting(s)
 	}
+	s.TransparentType = normalizeTransparentType(s.TransparentType)
 	if s.LogLevel == "" {
 		s.LogLevel = conf.GetEnvironmentConfig().LogLevel
 	}
@@ -28,6 +39,7 @@ func UpdateSetting(setting *configure.Setting) (err error) {
 	if setting.LogLevel == "" {
 		setting.LogLevel = conf.GetEnvironmentConfig().LogLevel
 	}
+	setting.TransparentType = normalizeTransparentType(setting.TransparentType)
 	if (setting.Transparent == configure.TransparentGfwlist || setting.RulePortMode == configure.GfwlistMode) && !asset.DoesV2rayAssetExist("LoyalsoldierSite.dat") {
 		return fmt.Errorf("cannot find GFWList files. update GFWList and try again")
 	}

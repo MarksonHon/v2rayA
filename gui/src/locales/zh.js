@@ -155,7 +155,7 @@ export default {
       transparentProxy:
         "全局代理开启后，无需经过额外设置，任何TCP流量均会经过V2RayA。另外，如需作为网关使得连接本机的其他主机或docker也享受代理，请勾选“开启局域网共享”。",
       transparentType:
-        "★tproxy: 支持udp，不支持docker。★redirect: docker友好，不支持udp，需要占用本地53端口以应对dns污染。",
+        "★tproxy: 支持udp，不支持docker。★redirect: docker友好，不支持udp，需要占用本地53端口以应对dns污染。★Hev Socks5 Tunnel: 统一的 TUN 模式，不再区分 gvisor/system。",
       tunMode:
         "★FakeIP: 使用虚拟IP加速DNS解析，提高性能。★RealIP: 使用真实IP，更适合某些特殊应用。",
       tunIPv6:
@@ -166,6 +166,8 @@ export default {
         "强制所有流量通过TUN接口路由，防止流量绕过代理。Windows下建议开启。",
       tunAutoRoute:
         "自动配置系统路由表，将流量引导至TUN接口。关闭时可使用启动后脚本手动配置路由。",
+      tunBinaryMissing:
+        "未找到 v2raya-tun，可执行文件需安装并加入 PATH 才能启用 Hev Socks5 Tunnel。",
       pacMode:
         "该选项设置规则分流端口所使用的路由模式。默认情况下规则分流端口为20172，HTTP协议。",
       tcpFastOpen:

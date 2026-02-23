@@ -111,6 +111,10 @@ setting:
   ipForwardOn: 开启IP转发
   portSharingOn: 开启端口分享
   concurrency: 最大并发数
+  tunMode: TUN 模式
+  tunIPv6: TUN IPv6
+  tunStrictRoute: TUN 严格路由
+  tunAutoRoute: TUN 自动路由
   options:
     trace: 跟踪
     debug: 调试
@@ -138,7 +142,8 @@ setting:
     gfwlist: 该时间是指本地文件最后修改时间，因此可能会领先最新版本
     transparentProxy: >-
       全局代理开启后，无需经过额外设置，任何TCP流量均会经过V2RayA。另外，如需作为网关使得连接本机的其他主机或docker也享受代理，请勾选“开启局域网共享”。
-    transparentType: '★tproxy: 支持udp，不支持docker。★redirect: docker友好，不支持udp，需要占用本地53端口以应对dns污染。'
+    transparentType: '★tproxy: 支持udp，不支持docker。★redirect: docker友好，不支持udp，需要占用本地53端口以应对dns污染。★Hev Socks5 Tunnel: 统一 TUN 模式，不再区分 gvisor/system。'
+    tunBinaryMissing: 未找到 v2raya-tun，请安装并加入 PATH 后再启用 Hev Socks5 Tunnel。
     pacMode: 该选项设置规则分流端口所使用的路由模式。默认情况下规则分流端口为20172，HTTP协议。
     specialMode: >-
       ★supervisor：监控dns污染，提前拦截，利用v2ray-core的sniffing解决污染。★fakedns：使用fakedns策略加速解析。

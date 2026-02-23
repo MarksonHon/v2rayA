@@ -8,7 +8,12 @@ const { data } = await useV2Fetch<any>('setting').json()
 
 system.value.gfwlist = data.value.data.localGFWListVersion
 
+const tunBinaryAvailable = data.value.data.tunBinaryAvailable ?? true
+const tunBinaryPath = data.value.data.tunBinaryPath ?? ''
+
 setting = data.value.data.setting
+if (!tunBinaryAvailable && setting.transparentType === 'hev_tun')
+  setting.transparentType = 'system_proxy'
 
 const { data: { value: { data: { remoteGFWListVersion } } } }
   = await useV2Fetch<any>('remoteGFWListVersion').json()
@@ -81,7 +86,23 @@ const openDnsSettings = () => dnsSettingsRef?.open()
       <ElSelect v-model="setting.transparentType" size="small">
         <ElOption v-show="!system.lite && system.os === 'linux'" value="redirect">redirect</ElOption>
         <ElOption v-show="!system.lite && system.os === 'linux'" value="tproxy">tproxy</ElOption>
+        <ElOption v-show="!system.lite" value="hev_tun" :disabled="!tunBinaryAvailable">Hev Socks5 Tunnel</ElOption>
         <ElOption v-show="!(system.isRoot && (system.os === 'linux' || system.os === 'darwin'))" value="system_proxy">system proxy</ElOption>
+      </ElSelect>
+      <div v-if="!tunBinaryAvailable" class="text-red-500 text-sm">{{ $t('setting.messages.tunBinaryMissing') }}</div>
+    </div>
+
+    <div v-if="setting.transparent !== 'close' && setting.transparentType === 'hev_tun'">
+      <div>{{ $t('setting.tunMode') }}</div>
+      <ElSelect v-model="setting.tunFakeIP" size="small" :disabled="!tunBinaryAvailable">
+        <ElOption :value="true" label="FakeIP" />
+        <ElOption :value="false" label="RealIP" />
+      </ElSelect>
+
+      <div>{{ $t('setting.tunIPv6') }}</div>
+      <ElSelect v-model="setting.tunIPv6" size="small" :disabled="!tunBinaryAvailable">
+        <ElOption :value="true" :label="$t('setting.options.on')" />
+        <ElOption :value="false" :label="$t('setting.options.off')" />
       </ElSelect>
     </div>
 

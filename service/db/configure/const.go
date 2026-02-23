@@ -32,8 +32,10 @@ const (
 	TransparentGfwlist    = TransparentMode("gfwlist")
 	TransparentFollowRule = TransparentMode("pac")
 
-	TransparentTproxy      = TransparentType("tproxy")
-	TransparentRedirect    = TransparentType("redirect")
+	TransparentTproxy   = TransparentType("tproxy")
+	TransparentRedirect = TransparentType("redirect")
+	TransparentHevTun   = TransparentType("hev_tun")
+	// Deprecated legacy values kept for migration
 	TransparentGvisorTun   = TransparentType("gvisor_tun")
 	TransparentSystemTun   = TransparentType("system_tun")
 	TransparentSystemProxy = TransparentType("system_proxy")

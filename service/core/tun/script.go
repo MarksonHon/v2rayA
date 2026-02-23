@@ -8,9 +8,7 @@ import (
 	"github.com/v2rayA/v2rayA/pkg/util/log"
 )
 
-// runPostScript executes the user-defined post-start script.
-// On Windows it runs through cmd /C; on other platforms through sh -c.
-// Each non-empty line is treated as a separate command.
+// runPostScript executes user-provided post-start commands line by line.
 func runPostScript(script string) {
 	lines := strings.Split(script, "\n")
 	for _, line := range lines {

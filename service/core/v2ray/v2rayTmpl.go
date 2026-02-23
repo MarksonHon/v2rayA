@@ -940,6 +940,14 @@ func (t *Template) AppendDokodemoTProxy(tproxy string, port int, tag string) {
 
 func (t *Template) SetOutboundSockopt() {
 	mark := 0x80
+	// In HevTun mode the Linux policy-routing bypass rule is keyed on TunMark
+	// (438 / 0x1b6), not 0x80.  If v2ray's outbound connections carry the wrong
+	// mark they are NOT exempted from the "route everything through TUN" rule and
+	// end up being re-captured by hev-socks5-tunnel, creating an infinite loop
+	// that prevents any traffic from reaching the real network.
+	if t.Setting.TransparentType == configure.TransparentHevTun {
+		mark = tun.TunMark
+	}
 	//tos := 184
 	for i := range t.Outbounds {
 		if t.Outbounds[i].Protocol == "blackhole" || t.Outbounds[i].Protocol == "dns" {
@@ -1289,7 +1297,7 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 				},
 				Tag: "tun-dns-in",
 			})
-		case configure.TransparentGvisorTun, configure.TransparentSystemTun:
+		case configure.TransparentHevTun:
 			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
 				Port:     52345,
 				Protocol: "socks",
@@ -1947,7 +1955,7 @@ func NewTemplate(serverInfos []serverInfo, setting *configure.Setting) (t *Templ
 
 	if IsTransparentOn(t.Setting) {
 		switch t.Setting.TransparentType {
-		case configure.TransparentGvisorTun, configure.TransparentSystemTun:
+		case configure.TransparentHevTun:
 			//set outbound sendThrough address
 			t.setSendThrough()
 		}
@@ -2134,7 +2142,12 @@ func (t *Template) InsertMappingOutbound(o serverObj.ServerObj, inboundPort stri
 			Port: pluginPort,
 		})
 	}
-	var mark = 0x80
+	mark := 0x80
+	// HevTun mode uses TunMark so that Linux policy routing exempts the
+	// outbound connections from being re-captured by the TUN device.
+	if t.Setting.TransparentType == configure.TransparentHevTun {
+		mark = tun.TunMark
+	}
 	t.checkAndSetMark(&c.CoreOutbound, mark)
 	t.Outbounds = append(t.Outbounds, c.CoreOutbound)
 	t.Outbounds = append(t.Outbounds, c.ExtraOutbounds...)

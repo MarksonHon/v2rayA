@@ -157,7 +157,7 @@ export default {
       transparentProxy:
         "If transparent proxy on, no extra configure needed and all TCP traffic will pass through the v2rayA. Providing proxy service to other computers and docker as the gateway should make option 'Share in LAN' on.",
       transparentType:
-        "★tproxy: support UDP, but not support docker. ★redirect: friendly for docker, but does not support UDP and need to occupy local port 53 for dns anti-pollution.",
+        "★tproxy: support UDP, but not support docker. ★redirect: friendly for docker, but does not support UDP and need to occupy local port 53 for dns anti-pollution. ★Hev Socks5 Tunnel: unified TUN mode (no gvisor/system split).",
       tunMode:
         "★FakeIP: Use fake IPs to accelerate DNS resolution and improve performance. ★RealIP: Use real IPs, more suitable for certain special applications.",
       tunIPv6:
@@ -168,6 +168,8 @@ export default {
         "Force all traffic to be routed through the TUN interface, preventing bypass. Recommended on Windows.",
       tunAutoRoute:
         "Automatically configure the system routing table to direct traffic into the TUN interface. When disabled, use the post-start script to set up routes manually.",
+      tunBinaryMissing:
+        "v2raya-tun helper is not found in PATH. Install or add it to PATH to enable Hev Socks5 Tunnel.",
       pacMode: `Here you can set the splitting traffic rule of the rule port. By default, "Rule of Splitting Traffic" port is 20172 and HTTP protocol.`,
       tcpFastOpen:
         "Simplify TCP handshake process to speed up connection establishment. Risk of emphasizing characteristics of packets exists. It may cause failed to connect if your system does not support it.",

@@ -49,8 +49,7 @@ func writeTransparentProxyRules() (err error) {
 			return fmt.Errorf("not support \"redirect\" mode of transparent proxy: %w", err)
 		}
 		iptables.SetWatcher(iptables.Redirect)
-	case configure.TransparentGvisorTun, configure.TransparentSystemTun:
-		mode, _, _ := strings.Cut(string(setting.TransparentType), "_")
+	case configure.TransparentHevTun:
 		tun.Default.SetFakeIP(setting.TunFakeIP)
 		tun.Default.SetIPv6(setting.TunIPv6)
 		tun.Default.SetStrictRoute(setting.TunStrictRoute)
@@ -75,49 +74,22 @@ func writeTransparentProxyRules() (err error) {
 		// (Inet4RouteExcludeAddress). Without exclusion, v2ray's outbound connections to the
 		// VPN server would be captured by TUN and forwarded back to v2ray — an infinite loop.
 		// Retry up to 3 times; transient DNS issues are common at startup on some platforms.
-		_, serverInfos, _ := getConnectedServerObjs()
-		for _, info := range serverInfos {
+		nodeHosts := collectAllNodeHosts()
+		_, connectedInfos, _ := getConnectedServerObjs()
+		for _, info := range connectedInfos {
 			host := info.Info.GetHostname()
-			if addr, err := netip.ParseAddr(host); err == nil {
-				// Already an IP address — no DNS needed.
-				tun.Default.AddIPWhitelist(addr)
-			} else {
-				// Domain name — resolve to IPs with retry.
-				log.Info("[TUN] Resolving server domain: %s", host)
-				var ips []net.IP
-				var lookupErr error
-				for attempt := 0; attempt < 3; attempt++ {
-					if attempt > 0 {
-						time.Sleep(300 * time.Millisecond)
-						log.Info("[TUN] Retrying DNS for %s (attempt %d/3)", host, attempt+1)
-					}
-					ips, lookupErr = net.LookupIP(host)
-					if lookupErr == nil {
-						break
-					}
-				}
-				// Always add domain to DNS whitelist (ensures real IP, not FakeIP, is returned).
-				tun.Default.AddDomainWhitelist(host)
-				if lookupErr == nil {
-					log.Info("[TUN] Resolved %s to %d IP address(es)", host, len(ips))
-					for _, ip := range ips {
-						if addr, ok := netip.AddrFromSlice(ip); ok {
-							tun.Default.AddIPWhitelist(addr)
-						}
-					}
-				} else {
-					// All retries failed. The server IP is unknown and cannot be excluded from
-					// TUN routes. Traffic to the VPN server may loop back through TUN.
-					// Log a clear warning so users can diagnose the issue.
-					log.Warn("[TUN] Failed to resolve server domain %s after 3 attempts: %v", host, lookupErr)
-					log.Warn("[TUN] Server IP is NOT excluded from TUN routes — routing loop is possible. Check your DNS.")
-				}
+			if host != "" {
+				nodeHosts = append(nodeHosts, host)
 			}
+		}
+		excludeSeen := make(map[string]struct{})
+		for _, host := range nodeHosts {
+			addHostExclusionToTun(host, excludeSeen)
 		}
 
 		// Now start TUN with the exclusion list configured
-		if err = tun.Default.Start(tun.Stack(mode)); err != nil {
-			return fmt.Errorf("not support \"%s tun\" mode of transparent proxy: %w", mode, err)
+		if err = tun.Default.Start(tun.StackHev); err != nil {
+			return fmt.Errorf("not support \"hev tun\" mode of transparent proxy: %w", err)
 		}
 	case configure.TransparentSystemProxy:
 		if err = iptables.SystemProxy.GetSetupCommands().Run(true); err != nil {
@@ -133,6 +105,66 @@ func writeTransparentProxyRules() (err error) {
 		resetResolvHijacker()
 	}
 	return nil
+}
+
+// collectAllNodeHosts gathers every known node hostname/IP from saved servers and subscriptions.
+func collectAllNodeHosts() []string {
+	hosts := make([]string, 0)
+	for _, srv := range configure.GetServers() {
+		if host := strings.TrimSpace(srv.ServerObj.GetHostname()); host != "" {
+			hosts = append(hosts, host)
+		}
+	}
+	for _, sub := range configure.GetSubscriptions() {
+		for _, srv := range sub.Servers {
+			if host := strings.TrimSpace(srv.ServerObj.GetHostname()); host != "" {
+				hosts = append(hosts, host)
+			}
+		}
+	}
+	return hosts
+}
+
+// addHostExclusionToTun resolves and excludes a single host (domain or IP) from the TUN path.
+func addHostExclusionToTun(host string, seen map[string]struct{}) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return
+	}
+	if seen != nil {
+		if _, ok := seen[host]; ok {
+			return
+		}
+		seen[host] = struct{}{}
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		tun.Default.AddIPWhitelist(addr)
+		return
+	}
+	// Domain — ensure it returns real IP (not FakeIP) and resolve to add explicit exclusions.
+	tun.Default.AddDomainWhitelist(host)
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(300 * time.Millisecond)
+			log.Info("[TUN] Retrying DNS for %s (attempt %d/3)", host, attempt+1)
+		}
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		for _, ip := range ips {
+			if addr, ok := netip.AddrFromSlice(ip); ok {
+				tun.Default.AddIPWhitelist(addr)
+			}
+		}
+		return
+	}
+	if lastErr != nil {
+		log.Warn("[TUN] Failed to resolve node %s for exclusion: %v", host, lastErr)
+		log.Warn("[TUN] Node may loop through TUN; check DNS or add manual route.")
+	}
 }
 
 func IsTransparentOn(setting *configure.Setting) bool {

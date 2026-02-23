@@ -63,10 +63,16 @@
         <b-select v-model="transparentType" expanded>
           <option v-show="!lite && os === 'linux'" value="redirect">redirect</option>
           <option v-show="!lite && os === 'linux'" value="tproxy">tproxy</option>
-          <option v-show="!lite" value="gvisor_tun">gvisor tun</option>
-          <option v-show="!lite" value="system_tun">system tun</option>
+          <option
+            v-show="!lite"
+            value="hev_tun"
+            :disabled="!tunBinaryAvailable"
+          >Hev Socks5 Tunnel</option>
           <option v-show="!(isRoot && (os === 'linux' || os === 'darwin'))" value="system_proxy">system proxy</option>
         </b-select>
+        <p v-if="!tunBinaryAvailable" class="help is-danger" style="margin-top: 4px">
+          {{ $t('setting.messages.tunBinaryMissing') }}
+        </p>
 
         <template v-if="transparentType == 'tproxy'">
           <b-button style="
@@ -87,7 +93,7 @@
               style="position: relative; top: 2px; right: 3px; font-weight: normal" />
           </b-tooltip>
         </template>
-        <b-select v-model="tunFakeIP" expanded>
+        <b-select v-model="tunFakeIP" expanded :disabled="!tunBinaryAvailable">
           <option :value="true">FakeIP</option>
           <option :value="false">RealIP</option>
         </b-select>
@@ -101,44 +107,10 @@
               style="position: relative; top: 2px; right: 3px; font-weight: normal" />
           </b-tooltip>
         </template>
-        <b-select v-model="tunIPv6" expanded>
-          <option :value="true">{{ $t("setting.options.enabled") }}</option>
-          <option :value="false">{{ $t("setting.options.disabled") }}</option>
-        </b-select>
-      </b-field>
-
-      <b-field v-show="tunEnabled" label-position="on-border">
-        <template slot="label">
-          {{ $t("setting.tunStrictRoute") }}
-          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.tunStrictRoute')" position="is-right">
-            <b-icon size="is-small" icon=" iconfont icon-help-circle-outline"
-              style="position: relative; top: 2px; right: 3px; font-weight: normal" />
-          </b-tooltip>
-        </template>
-        <b-select v-model="tunStrictRoute" expanded>
+        <b-select v-model="tunIPv6" expanded :disabled="!tunBinaryAvailable">
           <option :value="true">{{ $t("setting.options.on") }}</option>
           <option :value="false">{{ $t("setting.options.off") }}</option>
         </b-select>
-      </b-field>
-
-      <b-field v-show="tunEnabled" label-position="on-border">
-        <template slot="label">
-          {{ $t("setting.tunAutoRoute") }}
-          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.tunAutoRoute')" position="is-right">
-            <b-icon size="is-small" icon=" iconfont icon-help-circle-outline"
-              style="position: relative; top: 2px; right: 3px; font-weight: normal" />
-          </b-tooltip>
-        </template>
-        <b-select v-model="tunAutoRoute" expanded>
-          <option :value="true">{{ $t("setting.options.on") }}</option>
-          <option :value="false">{{ $t("setting.options.off") }}</option>
-        </b-select>
-        <b-button v-show="!tunAutoRoute" style="
-            margin-left: 0;
-            border-radius: 0px;
-            color: rgba(0, 0, 0, 0.75);
-          " outlined @click="handleClickTunPostStartScript">{{ $t("setting.tunPostStartScript") }}
-        </b-button>
       </b-field>
 
       <b-field label-position="on-border">
@@ -364,6 +336,8 @@ export default {
     localGFWListVersion: "checking...",
     os: "",
     isRoot: false,
+    tunBinaryAvailable: true,
+    tunBinaryPath: "",
   }),
   computed: {
     lite() {
@@ -381,9 +355,8 @@ export default {
       return toInt(port);
     },
     tunEnabled() {
-      const isTunType =
-        this.transparentType === "gvisor_tun" || this.transparentType === "system_tun";
-      return this.transparent !== "close" && isTunType;
+      const isTunType = this.transparentType === "hev_tun";
+      return this.transparent !== "close" && isTunType && this.tunBinaryAvailable;
     },
   },
   created() {
@@ -420,6 +393,9 @@ export default {
             }
           });
           if (this.lite) {
+            this.transparentType = "system_proxy";
+          }
+          if (!this.tunBinaryAvailable && this.transparentType === "hev_tun") {
             this.transparentType = "system_proxy";
           }
         });
