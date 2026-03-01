@@ -12,6 +12,8 @@ func loadPlatformEnv() error {
 	return nil
 }
 
+func expandPlatformConfigPaths(p *Params) {}
+
 func defaultConfigDir(isLite bool) string {
 	if isLite {
 		if userConfigDir, err := os.UserConfigDir(); err == nil {

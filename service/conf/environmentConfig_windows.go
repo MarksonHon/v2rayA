@@ -21,6 +21,42 @@ import (
 
 var platformEnvOnce sync.Once
 
+// expandWindowsEnv 使用 Windows API 展开 %VAR% 风格的环境变量引用
+func expandWindowsEnv(s string) string {
+	if !strings.Contains(s, "%") {
+		return s
+	}
+	utf16Src, err := windows.UTF16FromString(s)
+	if err != nil {
+		return s
+	}
+	// 先探测所需缓冲区大小
+	n, _ := windows.ExpandEnvironmentStrings(&utf16Src[0], nil, 0)
+	if n == 0 {
+		return s
+	}
+	buf := make([]uint16, n)
+	n, err = windows.ExpandEnvironmentStrings(&utf16Src[0], &buf[0], n)
+	if err != nil || n == 0 {
+		return s
+	}
+	return windows.UTF16ToString(buf[:n])
+}
+
+// expandPlatformConfigPaths 展开 Params 中所有路径字段里的 Windows %VAR% 环境变量
+func expandPlatformConfigPaths(p *Params) {
+	p.Config = expandWindowsEnv(p.Config)
+	p.V2rayBin = expandWindowsEnv(p.V2rayBin)
+	p.V2rayConfigDirectory = expandWindowsEnv(p.V2rayConfigDirectory)
+	p.V2rayAssetsDirectory = expandWindowsEnv(p.V2rayAssetsDirectory)
+	p.LogFile = expandWindowsEnv(p.LogFile)
+	p.TransparentHook = expandWindowsEnv(p.TransparentHook)
+	p.CoreHook = expandWindowsEnv(p.CoreHook)
+	p.PluginManager = expandWindowsEnv(p.PluginManager)
+	p.WinEnvFile = expandWindowsEnv(p.WinEnvFile)
+	p.WebDir = expandWindowsEnv(p.WebDir)
+}
+
 func loadPlatformEnv() error {
 	var loadErr error
 	platformEnvOnce.Do(func() {
@@ -94,6 +130,9 @@ func loadPlatformEnv() error {
 					value = value[1 : len(value)-1]
 				}
 			}
+
+			// 展开值中 %VAR% 风格的 Windows 环境变量引用
+			value = expandWindowsEnv(value)
 
 			if err := os.Setenv(key, value); err != nil {
 				log.Warn("Failed to set env var %s: %v", key, err)
