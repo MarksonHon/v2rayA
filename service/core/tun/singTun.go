@@ -357,8 +357,7 @@ func (t *singTun) Start(stack Stack) error {
 
 	// Setup policy routing rules to exclude fwmark 0x80 traffic (v2ray/xray/plugin)
 	if err := SetupTunRouteRules(); err != nil {
-		// Log warning but continue - the reserved address check still provides protection
-		// This is mainly for Linux systems with root privileges
+		return err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
