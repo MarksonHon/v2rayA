@@ -228,7 +228,6 @@ export default {
     title: "DNS 设置",
     help: "DNS 帮助",
     helpTooltip: "查看 v2fly DNS 文档",
-    hint: "兼底 DNS（域名列表留空）放在最上方",
     colServer: "DNS 服务器",
     colDomains: "域名列表",
     colOutbound: "出口",

@@ -27,6 +27,9 @@ func CleanupTunRouteRules() error {
 	return nil
 }
 
+// setTunRouteAutoMode 在 macOS 上为空操作。
+func setTunRouteAutoMode(_ bool) {}
+
 // SetupExcludeRoutes 在 macOS 上为代理服务端地址添加"绕过 TUN"的静态主机路由。
 //
 // macOS 没有 fwmark，需要为每个服务端 IP 显式添加经物理网关的路由，

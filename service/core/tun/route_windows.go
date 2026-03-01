@@ -30,16 +30,31 @@ var (
 	savedLoopbackIfAlias string
 	savedPhysIfAlias     string
 	savedTunIfAlias6     string
+	// tunAutoRoute 记录当前是否由 sing-tun 自动管理路由
+	// true  = AutoRoute 开启，sing-tun 通过 winipcfg 管理路由，手动设置均为空操作
+	// false = AutoRoute 关闭，需手动 netsh 路由管理
+	tunAutoRoute bool
 )
+
+// setTunRouteAutoMode 通知 Windows 路由模块当前是否处于 AutoRoute 模式。
+// 源头 singTun.go Start() 在调用 SetupTunRouteRules 前调用。
+func setTunRouteAutoMode(auto bool) {
+	tunAutoRoute = auto
+}
 
 // SetupTunRouteRules 在 Windows 上通过 netsh 手动建立 TUN 默认路由。
 //
-// sing-tun 的 AutoRoute 在 Windows 上可靠性不足，因此关闭 AutoRoute，
-// 改由本函数添加以下路由（均使用 store=active，进程退出后自动失效）：
+// 当 AutoRoute 开启时，sing-tun 已通过 winipcfg 管理路由，本函数为空操作。
+// 当 AutoRoute 关闭时（用户显式禁用），添加以下路由（均使用 store=active，进程退出后自动失效）：
 //
 //   - 127.0.0.0/8 → 127.0.0.1  metric 0  （保证回环流量不经 TUN）
 //   - 0.0.0.0/0   → 172.19.0.2 metric 1  （全局流量走 TUN）
 func SetupTunRouteRules() error {
+	if tunAutoRoute {
+		// sing-tun 的 AutoRoute 已通过 winipcfg 高效管理路由，无需手动干预
+		log.Info("[TUN][Windows] AutoRoute 开启，sing-tun 管理路由，跳过手动 SetupTunRouteRules")
+		return nil
+	}
 	// --- 1. 回环路由：找到回环接口别名 ---
 	loopbackIf, err := getInterfaceAliasByIP("127.0.0.1")
 	if err != nil {
@@ -113,6 +128,9 @@ func SetupTunRouteRules() error {
 
 // CleanupTunRouteRules 删除 SetupTunRouteRules 添加的路由条目。
 func CleanupTunRouteRules() error {
+	if tunAutoRoute {
+		return nil // sing-tun 在 Close() 时自行清除路由
+	}
 	if loopbackRouteAdded && savedLoopbackIfAlias != "" {
 		out, err := exec.Command("netsh", "interface", "ipv4", "delete", "route",
 			"127.0.0.0/8", savedLoopbackIfAlias).CombinedOutput()
@@ -152,9 +170,14 @@ func CleanupTunRouteRules() error {
 
 // SetupExcludeRoutes 为代理服务端 IP 添加"绕过 TUN"的静态路由。
 //
-// Windows 没有 fwmark 机制，需为每个服务端 IP 显式添加经物理网关的路由，
+// 当 AutoRoute 开启时，sing-tun 已通过 Inet4RouteExcludeAddress 处理，无需单独添加。
+// 当 AutoRoute 关闭时，Windows 没有 fwmark 机制，需为每个服务端 IP 显式添加经物理网关的路由，
 // 避免代理流量被 TUN 再次捕获（回环）。
 func SetupExcludeRoutes(addrs []netip.Prefix) error {
+	if tunAutoRoute {
+		log.Info("[TUN][Windows] AutoRoute 开启，Inet4RouteExcludeAddress 已处理排除，跳过 SetupExcludeRoutes")
+		return nil
+	}
 	if len(addrs) == 0 {
 		return nil
 	}
@@ -219,6 +242,9 @@ func SetupExcludeRoutes(addrs []netip.Prefix) error {
 
 // CleanupExcludeRoutes 删除 SetupExcludeRoutes 添加的所有静态路由。
 func CleanupExcludeRoutes() error {
+	if tunAutoRoute {
+		return nil
+	}
 	physIf := savedPhysIfAlias
 	for _, prefix := range excludedRoutes {
 		addr := prefix.Addr()

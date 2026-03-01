@@ -71,3 +71,7 @@ func SetupTunDNS(_ []netip.Addr, _ string) error {
 func CleanupTunDNS(_ string) error {
 	return nil
 }
+
+// setTunRouteAutoMode 在 Linux 上为空操作。
+// Linux 通过 fwmark 策略路由处理，无需根据 AutoRoute 模式动态调整。
+func setTunRouteAutoMode(_ bool) {}

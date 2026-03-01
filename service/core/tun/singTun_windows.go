@@ -42,17 +42,23 @@ func platformTunName() string {
 	return "v2raya-tun"
 }
 
-// platformDisableAutoRoute 在 Windows 上返回 true。
+// platformDisableAutoRoute 在 Windows 上返回 false。
 //
-// sing-tun 的 AutoRoute 在 Windows 上可靠性不足，
-// 改由 SetupTunRouteRules 手动添加默认路由（metric=1）。
+// sing-tun v0.8.0+ 在 Windows 上通过 winipcfg LUID API 和 FWPM (StrictRoute) 实现
+// 可靠的路由管理，无需手动管理。
 func platformDisableAutoRoute() bool {
-	return true
+	return false
 }
 
 // platformPostStart 在 TUN 启动后为接口配置 DNS 服务器。
-// sing-tun 在 Windows 上不会自动将 DNSServers 写入系统接口配置。
-func platformPostStart(dnsServers []netip.Addr, tunName string) {
+//
+// 当 AutoRoute 启用时，sing-tun 已通过 luid.SetDNS() 处理 DNS，无需手动配置。
+// 当 AutoRoute 关闭时（用户显式禁用），手动调用 SetupTunDNS。
+func platformPostStart(dnsServers []netip.Addr, tunName string, autoRoute bool) {
+	if autoRoute {
+		// sing-tun 通过 winipcfg luid.SetDNS() 自动设置 DNS
+		return
+	}
 	if len(dnsServers) > 0 {
 		if err := SetupTunDNS(dnsServers, tunName); err != nil {
 			// 非致命错误：DNS 设置失败不影响流量转发
@@ -61,7 +67,11 @@ func platformPostStart(dnsServers []netip.Addr, tunName string) {
 }
 
 // platformPreClose 在 TUN 关闭前清理 Windows 特有资源。
-func platformPreClose(tunName string) {
+// AutoRoute 启用时 sing-tun 自行清理，无需手动操作。
+func platformPreClose(tunName string, autoRoute bool) {
+	if autoRoute {
+		return
+	}
 	if tunName != "" {
 		CleanupTunDNS(tunName)
 	}

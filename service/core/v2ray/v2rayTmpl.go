@@ -226,11 +226,29 @@ func parseAdvancedDnsServers(lines []string, domains []string) (domainNameServer
 		} else {
 			addr := parseDnsAddr(dns.Val)
 			p, _ := strconv.Atoi(addr.port)
-			domainNameServers = append(domainNameServers, coreObj.DnsServer{
-				Address: addr.host,
-				Port:    p,
-				Domains: domains,
-			})
+			if domains == nil {
+				// 兜底 DNS（无域名范围）：按 v2fly 文档使用纯字符串形式，不用花括号包裹。
+				// 非标端口时仍需对象形式，但不设 Domains 字段。
+				if p == 0 || p == 53 {
+					domainNameServers = append(domainNameServers, addr.host)
+				} else {
+					domainNameServers = append(domainNameServers, coreObj.DnsServer{
+						Address: addr.host,
+						Port:    p,
+					})
+				}
+			} else {
+				// 有域名匹配范围的 DNS：对象形式，端口 53 是默认值不写入。
+				portToSet := 0
+				if p != 53 {
+					portToSet = p
+				}
+				domainNameServers = append(domainNameServers, coreObj.DnsServer{
+					Address: addr.host,
+					Port:    portToSet,
+					Domains: domains,
+				})
+			}
 		}
 
 		if dns.Val == "localhost" {

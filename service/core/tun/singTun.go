@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"time"
 
 	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/bufio"
@@ -44,19 +45,20 @@ var (
 )
 
 type singTun struct {
-	mu           sync.Mutex
-	dialer       N.Dialer
-	forward      N.Dialer
-	cancel       context.CancelFunc
-	closer       io.Closer
-	waiter       *gvisorWaiter
-	dns          *DNS
-	whitelist    []netip.Addr
-	excludeAddrs []netip.Prefix // Addresses to exclude from TUN routing
-	useIPv6      bool
-	strictRoute  bool
-	autoRoute    bool
-	tunName      string // TUN interface name for cleanup
+	mu               sync.Mutex
+	dialer           N.Dialer
+	forward          N.Dialer
+	cancel           context.CancelFunc
+	closer           io.Closer
+	waiter           *gvisorWaiter
+	dns              *DNS
+	whitelist        []netip.Addr
+	excludeAddrs     []netip.Prefix // Addresses to exclude from TUN routing
+	useIPv6          bool
+	strictRoute      bool
+	autoRoute        bool
+	runningAutoRoute bool   // effective autoRoute after platform override
+	tunName          string // TUN interface name for cleanup
 }
 
 // isReservedAddress checks if an IP address belongs to reserved address ranges
@@ -155,21 +157,24 @@ func filterTunDNSServers(servers []netip.AddrPort) []netip.AddrPort {
 	return filtered
 }
 
-// resolveDnsHost resolves a hostname to both A and AAAA records
-// Returns a list of IP addresses (both IPv4 and IPv6)
+// resolveDnsHost resolves a hostname to both A and AAAA records.
+// Returns normalised IP addresses (IPv4-in-IPv6 addresses are unmapped to
+// pure IPv4 so they match the canonical form sing-tun uses).
 func resolveDnsHost(host string) []netip.Addr {
 	var ips []netip.Addr
 
-	// Check if it's already an IP address
+	// Already an IP address – just normalise and return.
 	if addr, err := netip.ParseAddr(host); err == nil {
-		return []netip.Addr{addr}
+		return []netip.Addr{addr.Unmap()}
 	}
 
-	// Resolve A records (IPv4)
+	// Resolve A + AAAA records.
 	if addrs, err := net.LookupIP(host); err == nil {
 		for _, addr := range addrs {
 			if ipAddr, ok := netip.AddrFromSlice(addr); ok {
-				ips = append(ips, ipAddr)
+				// net.LookupIP may return IPv4 as 16-byte IPv4-in-IPv6.
+				// Unmap to canonical Is4() so whitelist lookups match.
+				ips = append(ips, ipAddr.Unmap())
 			}
 		}
 	} else {
@@ -232,22 +237,36 @@ func (t *singTun) Start(stack Stack) error {
 		failedCloser.Close()
 	}()
 
+	// ── 保存调用方在 Start() 前设置的排除/白名单配置 ─────────────────────────
+	// Close() 会清空 t.excludeAddrs / t.whitelist / t.dns.whitelist，
+	// 必须先快照，待 Close() 之后恢复，新的 TUN 实例才能使用这些配置。
+	savedExclude := make([]netip.Prefix, len(t.excludeAddrs))
+	copy(savedExclude, t.excludeAddrs)
+	savedWhitelist := make([]netip.Addr, len(t.whitelist))
+	copy(savedWhitelist, t.whitelist)
+	savedDomainWhitelist := make(Matcher, len(t.dns.whitelist))
+	copy(savedDomainWhitelist, t.dns.whitelist)
+
 	// 根据平台预排除需要绕过 TUN 的地址（如 Windows 上的公共 DNS）
 	for _, prefix := range platformPreExcludeAddrs() {
 		exists := false
-		for _, ex := range t.excludeAddrs {
+		for _, ex := range savedExclude {
 			if ex == prefix {
 				exists = true
 				break
 			}
 		}
 		if !exists {
-			t.excludeAddrs = append(t.excludeAddrs, prefix)
+			savedExclude = append(savedExclude, prefix)
 			log.Info("[TUN] 平台预排除地址: %s", prefix)
 		}
 	}
 
+	// 关闭旧实例（会清空字段），然后立即恢复配置。
 	t.Close()
+	t.excludeAddrs = savedExclude
+	t.whitelist = savedWhitelist
+	t.dns.whitelist = savedDomainWhitelist
 	networkUpdateMonitor, err := tun.NewNetworkUpdateMonitor(defaultLogger)
 	if err != nil {
 		return err
@@ -287,17 +306,24 @@ func (t *singTun) Start(stack Stack) error {
 		log.Info("[TUN] AutoRoute 已由用户配置禁用")
 	}
 
+	// 记录生效的 autoRoute，供 Close() 中的平台清理逻辑使用
+	t.runningAutoRoute = autoRoute
+
 	log.Info("[TUN] Starting with StrictRoute=%t, AutoRoute=%t", strictRoute, autoRoute)
 	log.Info("[TUN] Total exclusions: %d IPv4, %d IPv6", len(inet4Exclude), len(inet6Exclude))
 	if platformDisableAutoRoute() && strictRoute {
 		log.Warn("[TUN] 当前平台：StrictRoute 可能只允许主进程流量通过！")
 	}
 
-	// Pre-install exclusion routes on platforms without fwmark support (e.g. Windows/macOS)
-	if len(t.excludeAddrs) > 0 {
+	// When AutoRoute is enabled, let sing-tun handle exclusion via InetRouteExcludeAddress.
+	// Only install OS-level routes on platforms that disable AutoRoute (e.g. Windows)
+	// or when the user explicitly turns AutoRoute off.
+	if !autoRoute && len(t.excludeAddrs) > 0 {
 		if err := SetupExcludeRoutes(t.excludeAddrs); err != nil {
 			log.Warn("[TUN] Failed to pre-install exclude routes: %v", err)
 		}
+	} else if autoRoute {
+		log.Info("[TUN] AutoRoute enabled; rely on sing-tun exclude list for %d entries", len(t.excludeAddrs))
 	}
 
 	// 接口名由平台函数决定（macOS 需返回空字符串以自动分配 utun*）
@@ -355,7 +381,9 @@ func (t *singTun) Start(stack Stack) error {
 	}
 	failedCloser = append(failedCloser, tunInterface)
 
-	// Setup policy routing rules to exclude fwmark 0x80 traffic (v2ray/xray/plugin)
+	// 通知各平台路由模块当前的 AutoRoute 模式，以便 Windows 等平台决定是否需要手动路由
+	setTunRouteAutoMode(autoRoute)
+	// Linux: 始终添加 fwmark 策略路由规则；Windows/macOS: 按 AutoRoute 状态决定
 	if err := SetupTunRouteRules(); err != nil {
 		return err
 	}
@@ -386,14 +414,18 @@ func (t *singTun) Start(stack Stack) error {
 	t.waiter = &gvisorWaiter{tunStack}
 	t.tunName = tunName // Save for cleanup
 
-	// 执行平台特有的启动后操作（如 Windows 设置 DNS、macOS 配置网络服务 DNS）
-	platformPostStart(dnsServers, t.tunName)
+	// 执行平台特有的启动后操作（如 Windows AutoRoute 关闭时设置 DNS、macOS 配置网络服务 DNS）
+	platformPostStart(dnsServers, t.tunName, autoRoute)
 
-	t.dns.whitelist, _ = GetWhitelistCN()
-	// In TUN mode, we don't set d.servers so that DNS queries go through dnsForward mode
-	// which will use dokodemo-door (defaultDNSServer = 127.0.0.1:6053)
-	// DO NOT set t.dns.servers here - keep it empty for dnsForward mode
-	t.whitelist = nil
+	// 将 CN geosite 列表追加到已有的域名白名单末尾（原列表包含服务器域名等）。
+	// 不可直接赋值——那会覆盖 Start() 前通过 AddDomainWhitelist 设置的条目。
+	if cnWhitelist, err := GetWhitelistCN(); err == nil {
+		t.dns.whitelist = append(t.dns.whitelist, cnWhitelist...)
+	} else {
+		log.Warn("[TUN] GetWhitelistCN failed: %v", err)
+	}
+	// 注意：不要在此清空 t.whitelist。
+	// t.whitelist 是连接层的 IP 白名单（直连保障），必须在整个 TUN 生命周期内保持有效。
 	return nil
 }
 
@@ -408,11 +440,9 @@ func (t *singTun) Close() error {
 			t.waiter.Wait()
 			t.waiter = nil
 		}
-		// Cleanup DNS settings on Windows
-		if t.tunName != "" {
-			CleanupTunDNS(t.tunName)
-			t.tunName = ""
-		}
+		// 平台特定清理（Windows 非 AutoRoute 时恢复 DNS、macOS 恢复 networksetup DNS 等）
+		platformPreClose(t.tunName, t.runningAutoRoute)
+		t.tunName = ""
 		// Cleanup routing rules
 		CleanupTunRouteRules()
 		// Cleanup exclude routes on non-Linux platforms
@@ -433,10 +463,17 @@ func (t *singTun) AddDomainWhitelist(domain string) {
 }
 
 func (t *singTun) AddIPWhitelist(addr netip.Addr) {
+	// 规范化地址：net.LookupIP 返回的 IPv4 往往是 16 字节 IPv4-in-IPv6 形式
+	// （Is4In6()），而 sing-tun 传入的连接目标是 4 字节纯 IPv4（Is4()）。
+	// 两者在 slices.Contains 中不相等，导致白名单失效。统一 Unmap() 后再存储。
+	addr = addr.Unmap()
+	if !addr.IsValid() {
+		return
+	}
 	t.whitelist = append(t.whitelist, addr)
 	log.Info("[TUN] Added IP to whitelist: %s", addr.String())
-	// Also add to route exclusion list to prevent routing through TUN
-	// This is critical for Windows/macOS where fwmark routing is not available
+	// 同时加入路由排除列表：在 Windows/macOS 等无 fwmark 平台上，
+	// 需通过 OS 路由规则彻底阻止这些 IP 进入 TUN。
 	prefix := netip.PrefixFrom(addr, addr.BitLen())
 	t.excludeAddrs = append(t.excludeAddrs, prefix)
 	log.Info("[TUN] Added %s to route exclusion list", prefix.String())
@@ -458,8 +495,9 @@ func (t *singTun) SetAutoRoute(enabled bool) {
 	t.autoRoute = enabled
 }
 
-func (t *singTun) PrepareConnection(network string, source M.Socksaddr, destination M.Socksaddr) error {
-	return nil
+func (t *singTun) PrepareConnection(network string, source M.Socksaddr, destination M.Socksaddr, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
+	// v2rayA 不实现直连路由（所有流量经 newConnectionEx/newPacketConnectionEx 处理）
+	return nil, nil
 }
 
 func (t *singTun) NewConnectionEx(ctx context.Context, conn net.Conn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
