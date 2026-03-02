@@ -22,6 +22,7 @@ import (
 	"github.com/v2fly/v2ray-core/v5/common/strmatcher"
 	"github.com/v2rayA/v2ray-lib/router/routercommon"
 	"github.com/v2rayA/v2rayA/core/v2ray/asset"
+	"github.com/v2rayA/v2rayA/db/configure"
 	"github.com/v2rayA/v2rayA/pkg/util/log"
 	"google.golang.org/protobuf/proto"
 )
@@ -260,6 +261,22 @@ func (t *singTun) Start(stack Stack) error {
 		if !exists {
 			savedExclude = append(savedExclude, prefix)
 			log.Info("[TUN] Platform pre-excluded address: %s", prefix)
+		}
+	}
+
+	// Add connected proxy server addresses to exclusion list to prevent routing loops
+	proxyServerPrefixes := getConnectedProxyServerPrefixes()
+	for _, prefix := range proxyServerPrefixes {
+		exists := false
+		for _, ex := range savedExclude {
+			if ex == prefix {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			savedExclude = append(savedExclude, prefix)
+			log.Info("[TUN] Added proxy server to exclusion list: %s", prefix)
 		}
 	}
 
@@ -602,6 +619,51 @@ func (t *singTun) newPacketConnection(ctx context.Context, conn N.PacketConn, me
 }
 
 func (t *singTun) NewError(ctx context.Context, err error) {
+}
+
+// getConnectedProxyServerPrefixes 获取已连接的代理服务器地址前缀列表
+// 用于防止代理服务器流量被 TUN 捕获导致路由回环
+func getConnectedProxyServerPrefixes() []netip.Prefix {
+	var prefixes []netip.Prefix
+	seen := make(map[netip.Addr]bool)
+
+	// 获取已连接的服务器信息
+	css := configure.GetConnectedServers()
+	if css == nil {
+		return prefixes
+	}
+
+	for _, which := range css.Get() {
+		serverRaw, err := which.LocateServerRaw()
+		if err != nil {
+			log.Warn("[TUN] Failed to locate server for which %+v: %v", which, err)
+			continue
+		}
+
+		hostname := serverRaw.ServerObj.GetHostname()
+		port := serverRaw.ServerObj.GetPort()
+
+		// 解析主机名为 IP 地址
+		ips := resolveDnsHost(hostname)
+		for _, ip := range ips {
+			if seen[ip] {
+				continue
+			}
+			seen[ip] = true
+
+			// 转换为 /32 (IPv4) 或 /128 (IPv6) 前缀
+			var prefix netip.Prefix
+			if ip.Is4() {
+				prefix = netip.PrefixFrom(ip, 32)
+			} else {
+				prefix = netip.PrefixFrom(ip, 128)
+			}
+			prefixes = append(prefixes, prefix)
+			log.Info("[TUN] Resolved proxy server %s:%d -> %s", hostname, port, ip)
+		}
+	}
+
+	return prefixes
 }
 
 func GetWhitelistCN() (Matcher, error) {

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -17,6 +18,8 @@ import (
 )
 
 var elog debug.Log
+
+const coreShutdownTimeout = 30 * time.Second
 
 // tryRunAsService attempts to run as a Windows service, returns true if successful
 func tryRunAsService() bool {
@@ -128,6 +131,7 @@ func runAsService(isDebug bool) error {
 // cleanupResources cleans up resources, stops v2ray/xray processes
 func cleanupResources() {
 	elog.Info(1, "Cleaning up resources...")
+	runningCore := v2ray.ProcessManager.Process()
 
 	// Stop transparent proxy
 	v2ray.ProcessManager.CheckAndStopTransparentProxy(nil)
@@ -136,6 +140,16 @@ func cleanupResources() {
 	// Stop v2ray/xray process
 	v2ray.ProcessManager.Stop(false)
 	elog.Info(1, "v2ray/xray process stopped")
+	if runningCore != nil {
+		elog.Info(1, "Waiting for v2ray/xray core to exit...")
+		ctx, cancel := context.WithTimeout(context.Background(), coreShutdownTimeout)
+		defer cancel()
+		if err := runningCore.WaitUntilExit(ctx); err != nil {
+			elog.Error(1, fmt.Sprintf("Timeout while waiting for v2ray/xray core to exit: %v", err))
+		} else {
+			elog.Info(1, "v2ray/xray core exit confirmed")
+		}
+	}
 
 	// Close database connection
 	if err := db.DB().Close(); err != nil {

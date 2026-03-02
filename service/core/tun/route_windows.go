@@ -259,30 +259,35 @@ func CleanupExcludeRoutes() error {
 		return nil
 	}
 	physIf := savedPhysIfAlias
+	if physIf == "" {
+		if alias, err := getPhysicalInterfaceAlias(); err == nil {
+			physIf = alias
+		} else {
+			log.Warn("[TUN][Windows] Skip fetching physical interface alias during cleanup: %v", err)
+		}
+	}
 	for _, prefix := range excludedRoutes {
 		addr := prefix.Addr()
 		if addr.Is4() {
-			var args []string
+			args := []string{"interface", "ipv4", "delete", "route", prefix.String()}
 			if physIf != "" {
-				args = []string{"interface", "ipv4", "delete", "route", prefix.String(), physIf}
-			} else {
-				args = []string{"interface", "ipv4", "delete", "route", prefix.String()}
+				args = append(args, physIf)
 			}
 			out, err := exec.Command("netsh", args...).CombinedOutput()
 			if err != nil {
-				log.Warn("[TUN][Windows] 删除 IPv4 排除路由 %s 失败: %v, output: %s", prefix, err, string(out))
+				log.Warn("[TUN][Windows] Failed to delete IPv4 exclude route %s: %v, output: %s", prefix, err, string(out))
 			}
 		} else {
 			out, err := exec.Command("netsh", "interface", "ipv6", "delete", "route", prefix.String()).CombinedOutput()
 			if err != nil {
-				log.Warn("[TUN][Windows] 删除 IPv6 排除路由 %s 失败: %v, output: %s", prefix, err, string(out))
+				log.Warn("[TUN][Windows] Failed to delete IPv6 exclude route %s: %v, output: %s", prefix, err, string(out))
 			}
 		}
 	}
 	excludedRoutes = nil
 	savedPhysIfAlias = ""
 
-	// 同时清理动态路由
+	// Clean up dynamic routes as well
 	cleanupDynExcludeRoutes()
 	return nil
 }
@@ -306,13 +311,19 @@ func cleanupDynExcludeRoutes() {
 	cachedGw6 = ""
 	cachedIfMu.Unlock()
 
+	if physIf == "" {
+		if alias, err := getPhysicalInterfaceAlias(); err == nil {
+			physIf = alias
+		} else {
+			log.Warn("[TUN][Windows] Skip fetching physical interface alias during dynamic route cleanup: %v", err)
+		}
+	}
+
 	for _, prefix := range routes {
 		if prefix.Addr().Is4() {
-			var args []string
+			args := []string{"interface", "ipv4", "delete", "route", prefix.String()}
 			if physIf != "" {
-				args = []string{"interface", "ipv4", "delete", "route", prefix.String(), physIf}
-			} else {
-				args = []string{"interface", "ipv4", "delete", "route", prefix.String()}
+				args = append(args, physIf)
 			}
 			exec.Command("netsh", args...).Run() //nolint:errcheck
 		} else {
