@@ -237,9 +237,10 @@ func (t *singTun) Start(stack Stack) error {
 		failedCloser.Close()
 	}()
 
-	// ── 保存调用方在 Start() 前设置的排除/白名单配置 ─────────────────────────
-	// Close() 会清空 t.excludeAddrs / t.whitelist / t.dns.whitelist，
-	// 必须先快照，待 Close() 之后恢复，新的 TUN 实例才能使用这些配置。
+	// ── Snapshot the exclusion/whitelist config set by caller before Start() ──
+	// Close() will clear t.excludeAddrs / t.whitelist / t.dns.whitelist,
+	// so we must snapshot them first and restore after Close(),
+	// in order for the new TUN instance to use these configurations.
 	savedExclude := make([]netip.Prefix, len(t.excludeAddrs))
 	copy(savedExclude, t.excludeAddrs)
 	savedWhitelist := make([]netip.Addr, len(t.whitelist))
@@ -247,7 +248,7 @@ func (t *singTun) Start(stack Stack) error {
 	savedDomainWhitelist := make(Matcher, len(t.dns.whitelist))
 	copy(savedDomainWhitelist, t.dns.whitelist)
 
-	// 根据平台预排除需要绕过 TUN 的地址（如 Windows 上的公共 DNS）
+	// Pre-exclude addresses that should bypass TUN based on platform (e.g. public DNS on Windows)
 	for _, prefix := range platformPreExcludeAddrs() {
 		exists := false
 		for _, ex := range savedExclude {
@@ -258,11 +259,11 @@ func (t *singTun) Start(stack Stack) error {
 		}
 		if !exists {
 			savedExclude = append(savedExclude, prefix)
-			log.Info("[TUN] 平台预排除地址: %s", prefix)
+			log.Info("[TUN] Platform pre-excluded address: %s", prefix)
 		}
 	}
 
-	// 关闭旧实例（会清空字段），然后立即恢复配置。
+	// Close the old instance (which clears fields), then immediately restore config.
 	t.Close()
 	t.excludeAddrs = savedExclude
 	t.whitelist = savedWhitelist
@@ -298,22 +299,27 @@ func (t *singTun) Start(stack Stack) error {
 	autoRoute := t.autoRoute
 	strictRoute := t.strictRoute
 
-	// 某些平台（如 Windows）需要关闭 sing-tun 的 AutoRoute，改用手动路由
+	// Some platforms (e.g. Windows) need to disable sing-tun's AutoRoute and use manual routing instead
 	if platformDisableAutoRoute() && autoRoute {
 		autoRoute = false
-		log.Info("[TUN] 平台要求关闭 AutoRoute，改由手动路由管理")
+		log.Info("[TUN] Platform requires disabling AutoRoute, switching to manual routing management")
 	} else if !t.autoRoute {
-		log.Info("[TUN] AutoRoute 已由用户配置禁用")
+		log.Info("[TUN] AutoRoute disabled by user configuration")
 	}
 
-	// 记录生效的 autoRoute，供 Close() 中的平台清理逻辑使用
+	// Record the effective autoRoute for platform cleanup logic in Close()
 	t.runningAutoRoute = autoRoute
 
 	log.Info("[TUN] Starting with StrictRoute=%t, AutoRoute=%t", strictRoute, autoRoute)
 	log.Info("[TUN] Total exclusions: %d IPv4, %d IPv6", len(inet4Exclude), len(inet6Exclude))
 	if platformDisableAutoRoute() && strictRoute {
-		log.Warn("[TUN] 当前平台：StrictRoute 可能只允许主进程流量通过！")
+		log.Warn("[TUN] Current platform: StrictRoute might only allow traffic from the main process!")
 	}
+
+	// Must notify platform module of current AutoRoute mode before SetupExcludeRoutes/SetupTunRouteRules,
+	// otherwise Windows tunAutoRoute might keep the last value (e.g. true),
+	// causing SetupExcludeRoutes to be skipped when AutoRoute=false this time, leading to routing loops.
+	setTunRouteAutoMode(autoRoute)
 
 	// When AutoRoute is enabled, let sing-tun handle exclusion via InetRouteExcludeAddress.
 	// Only install OS-level routes on platforms that disable AutoRoute (e.g. Windows)
@@ -326,12 +332,12 @@ func (t *singTun) Start(stack Stack) error {
 		log.Info("[TUN] AutoRoute enabled; rely on sing-tun exclude list for %d entries", len(t.excludeAddrs))
 	}
 
-	// 接口名由平台函数决定（macOS 需返回空字符串以自动分配 utun*）
+	// Interface name is determined by platform function (macOS returns empty string for auto-allocation utun*)
 	tunName := platformTunName()
 	if tunName == "" {
-		log.Info("[TUN] 使用系统自动分配的接口名")
+		log.Info("[TUN] Using system-allocated interface name")
 	} else {
-		log.Info("[TUN] 使用接口名: %s", tunName)
+		log.Info("[TUN] Using interface name: %s", tunName)
 	}
 
 	tunOptions := tun.Options{
@@ -381,9 +387,7 @@ func (t *singTun) Start(stack Stack) error {
 	}
 	failedCloser = append(failedCloser, tunInterface)
 
-	// 通知各平台路由模块当前的 AutoRoute 模式，以便 Windows 等平台决定是否需要手动路由
-	setTunRouteAutoMode(autoRoute)
-	// Linux: 始终添加 fwmark 策略路由规则；Windows/macOS: 按 AutoRoute 状态决定
+	// Linux: always add fwmark policy routing rules; Windows/macOS: decided by AutoRoute state
 	if err := SetupTunRouteRules(); err != nil {
 		return err
 	}
@@ -414,18 +418,18 @@ func (t *singTun) Start(stack Stack) error {
 	t.waiter = &gvisorWaiter{tunStack}
 	t.tunName = tunName // Save for cleanup
 
-	// 执行平台特有的启动后操作（如 Windows AutoRoute 关闭时设置 DNS、macOS 配置网络服务 DNS）
+	// Perform platform-specific post-start operations (e.g. setting DNS when Windows AutoRoute is off, configuring macOS network service DNS)
 	platformPostStart(dnsServers, t.tunName, autoRoute)
 
-	// 将 CN geosite 列表追加到已有的域名白名单末尾（原列表包含服务器域名等）。
-	// 不可直接赋值——那会覆盖 Start() 前通过 AddDomainWhitelist 设置的条目。
+	// Append CN geosite list to existing domain whitelist (which includes server domains etc.).
+	// Cannot assign directly—that would overwrite entries added via AddDomainWhitelist before Start().
 	if cnWhitelist, err := GetWhitelistCN(); err == nil {
 		t.dns.whitelist = append(t.dns.whitelist, cnWhitelist...)
 	} else {
 		log.Warn("[TUN] GetWhitelistCN failed: %v", err)
 	}
-	// 注意：不要在此清空 t.whitelist。
-	// t.whitelist 是连接层的 IP 白名单（直连保障），必须在整个 TUN 生命周期内保持有效。
+	// Note: Do not clear t.whitelist here.
+	// t.whitelist is the IP whitelist for connection layer (direct connection guarantee), must remain valid throughout TUN lifecycle.
 	return nil
 }
 
@@ -440,7 +444,7 @@ func (t *singTun) Close() error {
 			t.waiter.Wait()
 			t.waiter = nil
 		}
-		// 平台特定清理（Windows 非 AutoRoute 时恢复 DNS、macOS 恢复 networksetup DNS 等）
+		// Platform-specific cleanup (restore DNS when Windows is not in AutoRoute, restore macOS networksetup DNS, etc.)
 		platformPreClose(t.tunName, t.runningAutoRoute)
 		t.tunName = ""
 		// Cleanup routing rules
@@ -449,7 +453,7 @@ func (t *singTun) Close() error {
 		if err := CleanupExcludeRoutes(); err != nil {
 			log.Warn("[TUN] Failed to cleanup exclude routes: %v", err)
 		}
-		// 清空白名单与排除列表
+		// Clear whitelist and exclusion list
 		t.whitelist = nil
 		t.excludeAddrs = nil
 	}
@@ -463,17 +467,18 @@ func (t *singTun) AddDomainWhitelist(domain string) {
 }
 
 func (t *singTun) AddIPWhitelist(addr netip.Addr) {
-	// 规范化地址：net.LookupIP 返回的 IPv4 往往是 16 字节 IPv4-in-IPv6 形式
-	// （Is4In6()），而 sing-tun 传入的连接目标是 4 字节纯 IPv4（Is4()）。
-	// 两者在 slices.Contains 中不相等，导致白名单失效。统一 Unmap() 后再存储。
+	// Normalize address: net.LookupIP often returns IPv4 as 16-byte IPv4-in-IPv6 form
+	// (Is4In6()), while sing-tun passes connection targets as 4-byte pure IPv4 (Is4()).
+	// Both are not equal in slices.Contains, causing whitelist failure.
+	// Store after unified Unmap().
 	addr = addr.Unmap()
 	if !addr.IsValid() {
 		return
 	}
 	t.whitelist = append(t.whitelist, addr)
 	log.Info("[TUN] Added IP to whitelist: %s", addr.String())
-	// 同时加入路由排除列表：在 Windows/macOS 等无 fwmark 平台上，
-	// 需通过 OS 路由规则彻底阻止这些 IP 进入 TUN。
+	// Also add to route exclusion list: on platforms without fwmark (e.g. Windows/macOS),
+	// OS level routing rules are needed to completely block these IPs from entering TUN.
 	prefix := netip.PrefixFrom(addr, addr.BitLen())
 	t.excludeAddrs = append(t.excludeAddrs, prefix)
 	log.Info("[TUN] Added %s to route exclusion list", prefix.String())
@@ -496,7 +501,7 @@ func (t *singTun) SetAutoRoute(enabled bool) {
 }
 
 func (t *singTun) PrepareConnection(network string, source M.Socksaddr, destination M.Socksaddr, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
-	// v2rayA 不实现直连路由（所有流量经 newConnectionEx/newPacketConnectionEx 处理）
+	// v2rayA does not implement direct routing (all traffic is handled via newConnectionEx/newPacketConnectionEx)
 	return nil, nil
 }
 
@@ -521,6 +526,9 @@ func (t *singTun) newConnection(ctx context.Context, conn net.Conn, metadata M.M
 		if slices.Contains(t.whitelist, metadata.Destination.Addr) || isReservedAddress(metadata.Destination.Addr) {
 			dialer = t.dialer
 			dialType = "direct"
+			// Add physical interface direct route for this IP on Windows to prevent routing loops.
+			// This function is a no-op on platforms like Linux (fwmark).
+			DynAddExcludeRoute(metadata.Destination.Addr)
 			log.Trace("[TUN-TCP] %s -> %s: using DIRECT (whitelisted/reserved)", metadata.Source, metadata.Destination)
 		} else {
 			dialer = t.forward
@@ -568,6 +576,7 @@ func (t *singTun) newPacketConnection(ctx context.Context, conn N.PacketConn, me
 		// Use direct connection for whitelisted IPs or reserved address ranges
 		if slices.Contains(t.whitelist, metadata.Destination.Addr) || isReservedAddress(metadata.Destination.Addr) {
 			dialer = t.dialer
+			DynAddExcludeRoute(metadata.Destination.Addr)
 			log.Trace("[TUN-UDP] %s -> %s: using DIRECT (whitelisted/reserved)", metadata.Source, metadata.Destination)
 		} else {
 			dialer = t.forward

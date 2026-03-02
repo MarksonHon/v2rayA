@@ -14,22 +14,25 @@ import (
 
 var excludedRoutes []netip.Prefix
 
-// SetupTunRouteRules 在 FreeBSD/OpenBSD 上为空操作。
-// 这些平台暂不支持策略路由规则配置。
+// SetupTunRouteRules is a no-operation on FreeBSD/OpenBSD.
+// These platforms do not currently support policy routing rule configuration.
 func SetupTunRouteRules() error {
 	return nil
 }
 
-// CleanupTunRouteRules 在 FreeBSD/OpenBSD 上为空操作。
+// CleanupTunRouteRules is a no-operation on FreeBSD/OpenBSD.
 func CleanupTunRouteRules() error {
 	return nil
 }
 
-// setTunRouteAutoMode 在 BSD 等平台上为空操作。
+// setTunRouteAutoMode is a no-operation on BSD and similar platforms.
 func setTunRouteAutoMode(_ bool) {}
 
-// SetupExcludeRoutes 在 FreeBSD/OpenBSD 上为代理服务端添加绕过 TUN 的静态路由。
-// BSD 系统的 route 命令语法与 macOS 基本一致。
+// DynAddExcludeRoute is a no-operation on BSD and similar platforms.
+func DynAddExcludeRoute(_ netip.Addr) {}
+
+// SetupExcludeRoutes adds "bypass TUN" static routes for proxy servers on FreeBSD/OpenBSD.
+// BSD system route command syntax is largely identical to macOS.
 func SetupExcludeRoutes(addrs []netip.Prefix) error {
 	if len(addrs) == 0 {
 		return nil
@@ -38,7 +41,7 @@ func SetupExcludeRoutes(addrs []netip.Prefix) error {
 
 	gw, err := getDefaultGateway()
 	if err != nil {
-		log.Warn("[TUN][BSD] 获取默认网关失败: %v", err)
+		log.Warn("[TUN][BSD] Failed to get default gateway: %v", err)
 		return err
 	}
 
@@ -53,16 +56,16 @@ func SetupExcludeRoutes(addrs []netip.Prefix) error {
 		if err != nil {
 			s := string(out)
 			if !strings.Contains(s, "File exists") && !strings.Contains(s, "already exists") {
-				log.Warn("[TUN][BSD] 添加排除路由 %s 失败: %v, output: %s", addr, err, s)
+				log.Warn("[TUN][BSD] Failed to add exclude route %s: %v, output: %s", addr, err, s)
 			}
 		} else {
-			log.Info("[TUN][BSD] 添加排除路由 %s → %s", addr, gw)
+			log.Info("[TUN][BSD] Added exclude route %s -> %s", addr, gw)
 		}
 	}
 	return nil
 }
 
-// CleanupExcludeRoutes 删除 SetupExcludeRoutes 添加的所有静态路由。
+// CleanupExcludeRoutes deletes all static routes added by SetupExcludeRoutes.
 func CleanupExcludeRoutes() error {
 	for _, prefix := range excludedRoutes {
 		addr := prefix.Addr()
@@ -74,33 +77,33 @@ func CleanupExcludeRoutes() error {
 			out, err = exec.Command("route", "delete", "-inet6", prefix.String()).CombinedOutput()
 		}
 		if err != nil {
-			log.Warn("[TUN][BSD] 删除排除路由 %s 失败: %v, output: %s", addr, err, string(out))
+			log.Warn("[TUN][BSD] Failed to delete exclude route %s: %v, output: %s", addr, err, string(out))
 		}
 	}
 	excludedRoutes = nil
 	return nil
 }
 
-// SetupTunDNS 在 FreeBSD/OpenBSD 上暂不支持自动 DNS 配置，为空操作。
+// SetupTunDNS does not currently support automatic DNS configuration on FreeBSD/OpenBSD and is a no-operation.
 func SetupTunDNS(_ []netip.Addr, _ string) error {
 	return nil
 }
 
-// CleanupTunDNS 在 FreeBSD/OpenBSD 上为空操作。
+// CleanupTunDNS is a no-operation on FreeBSD/OpenBSD.
 func CleanupTunDNS(_ string) error {
 	return nil
 }
 
-// getDefaultGateway 通过 netstat -rn 获取 BSD 系统的默认 IPv4 网关。
+// getDefaultGateway retrieves the default IPv4 gateway for BSD systems via `netstat -rn`.
 func getDefaultGateway() (string, error) {
-	// FreeBSD/OpenBSD: netstat -rn 中 Destination=default 那行
+	// FreeBSD/OpenBSD: the "default" destination line in netstat -rn
 	out, err := exec.Command("sh", "-c", "netstat -rn 2>/dev/null | awk '/^default/{print $2; exit}'").CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("获取默认网关失败: %w, output: %s", err, string(out))
+		return "", fmt.Errorf("failed to get default gateway: %w, output: %s", err, string(out))
 	}
 	gw := strings.TrimSpace(string(out))
 	if gw == "" {
-		return "", fmt.Errorf("默认网关为空（可能无网络连接）")
+		return "", fmt.Errorf("default gateway is empty (possibly no network connection)")
 	}
 	return gw, nil
 }

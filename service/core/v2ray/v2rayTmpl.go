@@ -227,8 +227,8 @@ func parseAdvancedDnsServers(lines []string, domains []string) (domainNameServer
 			addr := parseDnsAddr(dns.Val)
 			p, _ := strconv.Atoi(addr.port)
 			if domains == nil {
-				// 兜底 DNS（无域名范围）：按 v2fly 文档使用纯字符串形式，不用花括号包裹。
-				// 非标端口时仍需对象形式，但不设 Domains 字段。
+				// Fallback DNS (no domain scope): use plain string format as per v2fly documentation, no braces.
+				// Object format is still required for non-standard ports, but without the Domains field.
 				if p == 0 || p == 53 {
 					domainNameServers = append(domainNameServers, addr.host)
 				} else {
@@ -238,7 +238,7 @@ func parseAdvancedDnsServers(lines []string, domains []string) (domainNameServer
 					})
 				}
 			} else {
-				// 有域名匹配范围的 DNS：对象形式，端口 53 是默认值不写入。
+				// DNS with domain matching scope: object format, port 53 is the default and not written.
 				portToSet := 0
 				if p != 53 {
 					portToSet = p
@@ -995,82 +995,96 @@ func (t *Template) setDualStack() {
 	)
 	tagMap := make(map[string]struct{})
 	inbounds6 := deepcopy.Copy(t.Inbounds).([]coreObj.Inbound)
-	if !t.Setting.PortSharing {
-		// copy a group of ipv6 inbounds and set the tag
-		for i := range t.Inbounds {
-			if t.Inbounds[i].Tag == "transparent" && t.Setting.TransparentType == configure.TransparentRedirect {
-				// https://ipset.netfilter.org/iptables-extensions.man.html#lbDK
-				// REDIRECT redirects the packet to the machine itself by changing the destination IP to the primary address of the incoming interface.
-				// So we should listen at 0.0.0.0 instead of 127.0.0.1
-				inbounds6[i].Tag = "THIS_IS_A_DROPPED_TAG"
-				continue
+
+	// Add ::1 twins for every inbound that listens on a 127.x loopback address.
+	// Inbounds on 0.0.0.0 (LAN-shared) are not duplicated.
+	// Special exclusions:
+	//   transparent+Redirect  – kernel REDIRECT requires 0.0.0.0
+	//   dns-in                – receives the 127.2.0.17 treatment below
+	//   tun-dns-in / tun-dns-in-v6 – already manually paired in setInbound
+	for i := range t.Inbounds {
+		tag := t.Inbounds[i].Tag
+		if tag == "transparent" && t.Setting.TransparentType == configure.TransparentRedirect {
+			// https://ipset.netfilter.org/iptables-extensions.man.html#lbDK
+			// REDIRECT rewrites the destination to the primary address of the incoming interface,
+			// so the inbound must stay at 0.0.0.0.
+			inbounds6[i].Tag = "THIS_IS_A_DROPPED_TAG"
+			continue
+		}
+		if tag == "dns-in" || tag == "tun-dns-in" || tag == "tun-dns-in-v6" {
+			// Handled separately — skip generic duplication.
+			inbounds6[i].Tag = "THIS_IS_A_DROPPED_TAG"
+			continue
+		}
+		if !strings.HasPrefix(t.Inbounds[i].Listen, "127.") {
+			// 0.0.0.0 or other non-loopback address — no ::1 twin needed.
+			inbounds6[i].Tag = "THIS_IS_A_DROPPED_TAG"
+			continue
+		}
+		inbounds6[i].Listen = "::1"
+		if tag != "" {
+			tagMap[tag] = struct{}{}
+			t.Inbounds[i].Tag += tag4Suffix
+			inbounds6[i].Tag += tag6Suffix
+		}
+	}
+
+	for i := len(inbounds6) - 1; i >= 0; i-- {
+		if inbounds6[i].Tag == "THIS_IS_A_DROPPED_TAG" {
+			inbounds6 = append(inbounds6[:i], inbounds6[i+1:]...)
+		}
+	}
+
+	if iptables.IsIPv6Supported() {
+		t.Inbounds = append(t.Inbounds, inbounds6...)
+	}
+
+	// Update routing rules with _ipv4/_ipv6 suffixes for duplicated inbounds.
+	for i := range t.Routing.Rules {
+		tag6 := make([]string, 0)
+		for j, tag := range t.Routing.Rules[i].InboundTag {
+			if _, ok := tagMap[tag]; ok {
+				t.Routing.Rules[i].InboundTag[j] += tag4Suffix
+				tag6 = append(tag6, tag+tag6Suffix)
 			}
-			if t.Inbounds[i].Tag == "dns-in" {
+		}
+		if v6supported := iptables.IsIPv6Supported(); len(tag6) > 0 && v6supported {
+			t.Routing.Rules[i].InboundTag = append(t.Routing.Rules[i].InboundTag, tag6...)
+		}
+	}
+
+	// dns-in special handling: always bind to 127.2.0.17 for split-routing local queries.
+	// When PortSharing is on the inbound also stays on 0.0.0.0 for LAN DNS, so we add a
+	// second copy at 127.2.0.17 with tag dns-in-local.
+	for i := range t.Inbounds {
+		if t.Inbounds[i].Tag != "dns-in" {
+			continue
+		}
+		if !t.Setting.PortSharing {
+			// PortSharing off: move the single dns-in inbound to loopback-only.
+			t.Inbounds[i].Listen = "127.2.0.17"
+		} else {
+			// PortSharing on: keep 0.0.0.0 for LAN; also add a local copy.
+			if couldListenLocalhost, e := CouldLocalDnsListen(); couldListenLocalhost && e != nil {
+				// Port 53 is already in use on localhost; only listen on the special address.
 				t.Inbounds[i].Listen = "127.2.0.17"
-				inbounds6[i].Tag = "THIS_IS_A_DROPPED_TAG"
-				continue
 			} else {
-				t.Inbounds[i].Listen = "127.0.0.1"
-			}
-			inbounds6[i].Listen = "::1"
-			if t.Inbounds[i].Tag != "" {
-				tagMap[t.Inbounds[i].Tag] = struct{}{}
-				t.Inbounds[i].Tag += tag4Suffix
-				inbounds6[i].Tag += tag6Suffix
-			}
-		}
-		for i := len(inbounds6) - 1; i >= 0; i-- {
-			if inbounds6[i].Tag == "THIS_IS_A_DROPPED_TAG" {
-				inbounds6 = append(inbounds6[:i], inbounds6[i+1:]...)
-			}
-		}
-
-		if iptables.IsIPv6Supported() {
-			t.Inbounds = append(t.Inbounds, inbounds6...)
-		}
-
-		// set routing
-		for i := range t.Routing.Rules {
-			tag6 := make([]string, 0)
-			for j, tag := range t.Routing.Rules[i].InboundTag {
-				if _, ok := tagMap[tag]; ok {
-					t.Routing.Rules[i].InboundTag[j] += tag4Suffix
-					tag6 = append(tag6, tag+tag6Suffix)
-				}
-			}
-			if v6supported := iptables.IsIPv6Supported(); len(tag6) > 0 && v6supported {
-				t.Routing.Rules[i].InboundTag = append(t.Routing.Rules[i].InboundTag, tag6...)
-			}
-		}
-	} else {
-		// specially listen 127.2.0.17
-		hasDnsIn := false
-		for i := range t.Inbounds {
-			if t.Inbounds[i].Tag == "dns-in" {
-				if couldListenLocalhost, e := CouldLocalDnsListen(); couldListenLocalhost && e != nil {
-					// listen only 127.2.0.17
-					t.Inbounds[i].Listen = "127.2.0.17"
-				} else {
-					// listen both 0.0.0.0 and 127.2.0.17
-					localDnsInbound := t.Inbounds[i]
-					localDnsInbound.Listen = "127.2.0.17"
-					localDnsInbound.Tag = "dns-in-local"
-					t.Inbounds = append(t.Inbounds, localDnsInbound)
-					hasDnsIn = true
-				}
-				break
-			}
-		}
-		if hasDnsIn {
-			// set routing
-			for i := range t.Routing.Rules {
-				for _, tag := range t.Routing.Rules[i].InboundTag {
-					if tag == "dns-in" {
-						t.Routing.Rules[i].InboundTag = append(t.Routing.Rules[i].InboundTag, "dns-in-local")
+				localDnsInbound := t.Inbounds[i]
+				localDnsInbound.Listen = "127.2.0.17"
+				localDnsInbound.Tag = "dns-in-local"
+				t.Inbounds = append(t.Inbounds, localDnsInbound)
+				// Add dns-in-local to any routing rule that references dns-in.
+				for ri := range t.Routing.Rules {
+					for _, rtag := range t.Routing.Rules[ri].InboundTag {
+						if rtag == "dns-in" {
+							t.Routing.Rules[ri].InboundTag = append(t.Routing.Rules[ri].InboundTag, "dns-in-local")
+							break
+						}
 					}
 				}
 			}
 		}
+		break
 	}
 }
 func (t *Template) appendDNSOutbound() {
@@ -1291,7 +1305,7 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 		if t.Setting.PortSharing {
 			listenAddr = "0.0.0.0"
 		}
-		for i := 0; i < 4 && i < len(t.Inbounds); i++ {
+		for i := 0; i < 5 && i < len(t.Inbounds); i++ {
 			t.Inbounds[i].Listen = listenAddr
 		}
 		vmess := &t.Inbounds[4]
@@ -1349,19 +1363,15 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 				},
 			)
 		case configure.TransparentSystemProxy:
-			listenAddr := "127.0.0.1"
-			if t.Setting.PortSharing {
-				listenAddr = "0.0.0.0"
-			}
 			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
 				Port:     52345,
 				Protocol: "http",
-				Listen:   listenAddr,
+				Listen:   "127.0.0.1",
 				Tag:      "transparent",
 			}, coreObj.Inbound{
 				Port:     52306,
 				Protocol: "socks",
-				Listen:   listenAddr,
+				Listen:   "127.0.0.1",
 				Settings: &coreObj.InboundSettings{
 					UDP: true,
 				},
@@ -1390,7 +1400,7 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 		}
 	}
 
-	// 设置域名嗅探
+	// Set up domain sniffing
 	if setting.InboundSniffing != configure.InboundSniffingDisable && setting.InboundSniffing != "" {
 		enableSniffingRouteOnly := configure.GetSettingNotNil().RouteOnly
 		domainsExcludedText := configure.GetDomainsExcluded()
@@ -2199,7 +2209,7 @@ func (t *Template) InsertMappingOutbound(o serverObj.ServerObj, inboundPort stri
 	if t.Routing.DomainStrategy == "" {
 		t.Routing.DomainStrategy = "IPOnDemand"
 	}
-	//插入最前
+	// Insert at the beginning
 	tmp := make([]coreObj.RoutingRule, 1, len(t.Routing.Rules)+1)
 	tmp[0] = coreObj.RoutingRule{
 		Type:        "field",

@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/v2rayA/v2rayA/pkg/util/log"
 )
@@ -34,6 +35,18 @@ var (
 	// true  = AutoRoute 开启，sing-tun 通过 winipcfg 管理路由，手动设置均为空操作
 	// false = AutoRoute 关闭，需手动 netsh 路由管理
 	tunAutoRoute bool
+
+	// dynExcludeSet 记录已经动态添加过绕过路由的 IP 地址，防止重复添加。
+	dynExcludeSet sync.Map // key: netip.Addr (as string) → struct{}
+	// dynExcludedRoutes 记录所有动态添加的排除路由，供 CleanupExcludeRoutes 清理。
+	dynExcludedRoutes []netip.Prefix
+	dynExcludeMu      sync.Mutex
+	// 缓存物理接口和默认网关，避免每次动态路由时都调用 PowerShell。
+	cachedPhysIf  string
+	cachedGw4     string
+	cachedPhysIf6 string
+	cachedGw6     string
+	cachedIfMu    sync.Mutex
 )
 
 // setTunRouteAutoMode 通知 Windows 路由模块当前是否处于 AutoRoute 模式。
@@ -240,7 +253,7 @@ func SetupExcludeRoutes(addrs []netip.Prefix) error {
 	return nil
 }
 
-// CleanupExcludeRoutes 删除 SetupExcludeRoutes 添加的所有静态路由。
+// CleanupExcludeRoutes 删除 SetupExcludeRoutes 和 DynAddExcludeRoute 添加的所有静态路由。
 func CleanupExcludeRoutes() error {
 	if tunAutoRoute {
 		return nil
@@ -268,7 +281,131 @@ func CleanupExcludeRoutes() error {
 	}
 	excludedRoutes = nil
 	savedPhysIfAlias = ""
+
+	// 同时清理动态路由
+	cleanupDynExcludeRoutes()
 	return nil
+}
+
+// cleanupDynExcludeRoutes 删除所有 DynAddExcludeRoute 动态添加的路由并重置状态。
+func cleanupDynExcludeRoutes() {
+	dynExcludeMu.Lock()
+	routes := dynExcludedRoutes
+	physIf := cachedPhysIf
+	dynExcludedRoutes = nil
+	dynExcludeMu.Unlock()
+	dynExcludeSet.Range(func(k, _ any) bool {
+		dynExcludeSet.Delete(k)
+		return true
+	})
+	// 重置缓存的物理接口信息
+	cachedIfMu.Lock()
+	cachedPhysIf = ""
+	cachedGw4 = ""
+	cachedPhysIf6 = ""
+	cachedGw6 = ""
+	cachedIfMu.Unlock()
+
+	for _, prefix := range routes {
+		if prefix.Addr().Is4() {
+			var args []string
+			if physIf != "" {
+				args = []string{"interface", "ipv4", "delete", "route", prefix.String(), physIf}
+			} else {
+				args = []string{"interface", "ipv4", "delete", "route", prefix.String()}
+			}
+			exec.Command("netsh", args...).Run() //nolint:errcheck
+		} else {
+			exec.Command("netsh", "interface", "ipv6", "delete", "route", prefix.String()).Run() //nolint:errcheck
+		}
+	}
+}
+
+// DynAddExcludeRoute 在运行时为指定 IP 添加一条经物理接口直连的静态路由，
+// 用于防止 TUN 处理器的"直连"拨号因 TUN 接口路由而再次进入 TUN，导致路由回环。
+//
+// 该函数幂等（同一个 IP 只添加一次），路由通过 goroutine 异步添加，
+// 不阻塞连接处理主路径。在 TUN 关闭时由 CleanupExcludeRoutes 统一清理。
+func DynAddExcludeRoute(addr netip.Addr) {
+	addr = addr.Unmap()
+	if !addr.IsValid() || addr.IsLoopback() || addr.IsUnspecified() {
+		return
+	}
+	key := addr.String()
+	if _, loaded := dynExcludeSet.LoadOrStore(key, struct{}{}); loaded {
+		// 已经添加过
+		return
+	}
+	prefix := netip.PrefixFrom(addr, addr.BitLen())
+	dynExcludeMu.Lock()
+	dynExcludedRoutes = append(dynExcludedRoutes, prefix)
+	dynExcludeMu.Unlock()
+
+	go func() {
+		// 获取或缓存物理网关/接口
+		cachedIfMu.Lock()
+		gw4 := cachedGw4
+		physIf := cachedPhysIf
+		gw6 := cachedGw6
+		physIf6 := cachedPhysIf6
+		cachedIfMu.Unlock()
+
+		if addr.Is4() {
+			if gw4 == "" || physIf == "" {
+				var err error
+				gw4, err = getDefaultGateway()
+				if err != nil {
+					log.Warn("[TUN][Windows] DynAddExcludeRoute: 获取 IPv4 网关失败: %v", err)
+					return
+				}
+				physIf, err = getPhysicalInterfaceAlias()
+				if err != nil {
+					log.Warn("[TUN][Windows] DynAddExcludeRoute: 获取物理接口失败: %v", err)
+					return
+				}
+				cachedIfMu.Lock()
+				cachedGw4 = gw4
+				cachedPhysIf = physIf
+				cachedIfMu.Unlock()
+			}
+			out, err := exec.Command("netsh", "interface", "ipv4", "add", "route",
+				prefix.String(), physIf, "nexthop="+gw4, "metric=5", "store=active").CombinedOutput()
+			if err != nil {
+				if !isAlreadyExists(string(out)) {
+					log.Warn("[TUN][Windows] DynAddExcludeRoute: 添加 IPv4 路由 %s 失败: %v", prefix, err)
+				}
+			} else {
+				log.Info("[TUN][Windows] DynAddExcludeRoute: 已添加 IPv4 路由 %s → %s (%s)", prefix, gw4, physIf)
+			}
+		} else {
+			if gw6 == "" || physIf6 == "" {
+				var err error
+				gw6, err = getDefaultGatewayIPv6()
+				if err != nil {
+					log.Warn("[TUN][Windows] DynAddExcludeRoute: 获取 IPv6 网关失败: %v", err)
+					return
+				}
+				physIf6, err = getPhysicalInterfaceAliasIPv6()
+				if err != nil {
+					log.Warn("[TUN][Windows] DynAddExcludeRoute: 获取 IPv6 物理接口失败: %v", err)
+					return
+				}
+				cachedIfMu.Lock()
+				cachedGw6 = gw6
+				cachedPhysIf6 = physIf6
+				cachedIfMu.Unlock()
+			}
+			out, err := exec.Command("netsh", "interface", "ipv6", "add", "route",
+				prefix.String(), physIf6, "nexthop="+gw6, "metric=5", "store=active").CombinedOutput()
+			if err != nil {
+				if !isAlreadyExists(string(out)) {
+					log.Warn("[TUN][Windows] DynAddExcludeRoute: 添加 IPv6 路由 %s 失败: %v", prefix, err)
+				}
+			} else {
+				log.Info("[TUN][Windows] DynAddExcludeRoute: 已添加 IPv6 路由 %s → %s (%s)", prefix, gw6, physIf6)
+			}
+		}
+	}()
 }
 
 // SetupTunDNS 通过 netsh 为 TUN 接口设置 DNS 服务器地址。
