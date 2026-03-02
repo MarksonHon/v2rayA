@@ -497,9 +497,9 @@ func (t *Template) setDNSRouting(routing []coreObj.RoutingRule, supportUDP map[s
 	t.Routing.Rules = append(t.Routing.Rules,
 		coreObj.RoutingRule{Type: "field", InboundTag: []string{"dns-in"}, OutboundTag: "direct"},
 	)
-	// Always route TUN dokodemo DNS inbound to dns-out
+	// Always route TUN dokodemo DNS inbound (IPv4/IPv6) to dns-out
 	t.Routing.Rules = append(t.Routing.Rules,
-		coreObj.RoutingRule{Type: "field", InboundTag: []string{"tun-dns-in"}, OutboundTag: "dns-out"},
+		coreObj.RoutingRule{Type: "field", InboundTag: []string{"tun-dns-in", "tun-dns-in-v6"}, OutboundTag: "dns-out"},
 		// Explicitly route traffic coming from the TUN DNS listener (port 6053) into the DNS module.
 		coreObj.RoutingRule{Type: "field", Port: strconv.Itoa(tun.TunDNSListenPort), OutboundTag: "dns-out"},
 	)
@@ -950,7 +950,7 @@ func (t *Template) setTransparentRouting() (err error) {
 }
 func (t *Template) AppendDokodemoTProxy(tproxy string, port int, tag string) {
 	dokodemo := coreObj.Inbound{
-		Listen:   "0.0.0.0",
+		Listen:   "127.0.0.1",
 		Port:     port,
 		Protocol: "dokodemo-door",
 		Sniffing: coreObj.Sniffing{
@@ -1287,6 +1287,13 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 		t.Inbounds[1].Port = p.Http
 		t.Inbounds[2].Port = p.Socks5WithPac
 		t.Inbounds[3].Port = p.HttpWithPac
+		listenAddr := "127.0.0.1"
+		if t.Setting.PortSharing {
+			listenAddr = "0.0.0.0"
+		}
+		for i := 0; i < 4 && i < len(t.Inbounds); i++ {
+			t.Inbounds[i].Listen = listenAddr
+		}
 		vmess := &t.Inbounds[4]
 		vmess.Port = p.Vmess
 		if p.Vmess > 0 {
@@ -1316,28 +1323,45 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 				Tag: "transparent",
 			})
 			// Local dokodemo-door listener for DNS (used by TUN DNS forwarder)
-			// Listen on localhost (dual-stack: IPv4 + IPv6)
-			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
-				Port:     tun.TunDNSListenPort,
-				Protocol: "dokodemo-door",
-				Listen:   "localhost",
-				Settings: &coreObj.InboundSettings{
-					Network: "tcp,udp",
-					Address: "127.0.0.1",
-					Port:    53,
+			// Bind explicitly for IPv4 and IPv6 to cover both address families on Windows.
+			t.Inbounds = append(t.Inbounds,
+				coreObj.Inbound{
+					Port:     tun.TunDNSListenPort,
+					Protocol: "dokodemo-door",
+					Listen:   "127.0.0.1",
+					Settings: &coreObj.InboundSettings{
+						Network: "tcp,udp",
+						Address: "127.0.0.1",
+						Port:    53,
+					},
+					Tag: "tun-dns-in",
 				},
-				Tag: "tun-dns-in",
-			})
+				coreObj.Inbound{
+					Port:     tun.TunDNSListenPort,
+					Protocol: "dokodemo-door",
+					Listen:   "::1",
+					Settings: &coreObj.InboundSettings{
+						Network: "tcp,udp",
+						Address: "::1",
+						Port:    53,
+					},
+					Tag: "tun-dns-in-v6",
+				},
+			)
 		case configure.TransparentSystemProxy:
+			listenAddr := "127.0.0.1"
+			if t.Setting.PortSharing {
+				listenAddr = "0.0.0.0"
+			}
 			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
 				Port:     52345,
 				Protocol: "http",
-				Listen:   "127.0.0.1",
+				Listen:   listenAddr,
 				Tag:      "transparent",
 			}, coreObj.Inbound{
 				Port:     52306,
 				Protocol: "socks",
-				Listen:   "127.0.0.1",
+				Listen:   listenAddr,
 				Settings: &coreObj.InboundSettings{
 					UDP: true,
 				},

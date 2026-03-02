@@ -119,7 +119,7 @@ export default {
     autoUpdateGfwlist: "自动更新GFWList",
     preferModeWhenUpdate: "解析订阅链接/更新时优先使用",
     ipForwardOn: "开启IP转发",
-    portSharingOn: "开启端口分享",
+    portSharingOn: "允许局域网的连接",
     concurrency: "最大并发数",
     options: {
       trace: "跟踪",

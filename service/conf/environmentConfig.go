@@ -66,6 +66,8 @@ func initFunc() {
 	if params.Config == "" {
 		params.Config = defaultConfigDir(params.Lite)
 	}
+	// Fix mis-detected Linux-style config path on Windows
+	params.Config = sanitizeConfigDirForPlatform(params.Config, params.Lite)
 	// replace all dots of the filename with underlines
 	params.Config = filepath.Join(
 		filepath.Dir(params.Config),

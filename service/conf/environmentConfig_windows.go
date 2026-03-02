@@ -211,3 +211,18 @@ func defaultConfigDir(isLite bool) string {
 
 	return filepath.Join(os.TempDir(), "v2rayA")
 }
+
+// sanitizeConfigDirForPlatform avoids creating Linux-style paths like C:\\etc\\v2raya on Windows
+func sanitizeConfigDirForPlatform(config string, isLite bool) string {
+	cleaned := filepath.Clean(config)
+	normalized := strings.ToLower(filepath.ToSlash(cleaned))
+
+	// Detect Linux default path on Windows where volume is missing and path starts with /etc/v2raya
+	if filepath.VolumeName(cleaned) == "" && strings.HasPrefix(normalized, "/etc/v2raya") {
+		fallback := defaultConfigDir(isLite)
+		log.Warn("Detected Linux-style config path on Windows (%s); falling back to %s", config, fallback)
+		return fallback
+	}
+
+	return config
+}
