@@ -131,6 +131,7 @@ func TestParseDNSServerHost(t *testing.T) {
 		{"ip with port", "1.1.1.1:53", []string{"1.1.1.1"}},
 		{"https url", "https://dns.google/dns-query", []string{"dns.google"}},
 		{"tls url", "tls://dns.google:853", []string{"dns.google"}},
+		{"bare ipv6", "2001:db8::1", []string{"2001:db8::1"}},
 		{"domain only", "dns.google", []string{"dns.google"}},
 	}
 

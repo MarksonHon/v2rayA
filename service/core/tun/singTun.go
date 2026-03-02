@@ -243,6 +243,10 @@ func parseDNSServerHost(server string) []string {
 		host, _, err := net.SplitHostPort(server)
 		if err == nil && host != "" {
 			hosts = append(hosts, host)
+		} else {
+			// Fallback for bare IPv6 addresses (e.g. "2001:db8::1") or
+			// other formats that SplitHostPort cannot parse.
+			hosts = append(hosts, server)
 		}
 	} else {
 		hosts = append(hosts, server)
