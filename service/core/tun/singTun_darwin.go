@@ -3,14 +3,35 @@
 
 package tun
 
-import "net/netip"
+import (
+	"net/netip"
 
-// platformPreExcludeAddrs 在 macOS 上返回额外需要排除的地址。
-// macOS 没有 fwmark，与 Windows 类似需要预排除常见 DNS 服务器以防回环，
-// 但 macOS 上 sing-tun 的 Inet4RouteExcludeAddress 通常能可靠工作，
-// 因此预排除列表保持最小（只防止系统 DNS 回环）。
+	"github.com/v2rayA/v2rayA/db/configure"
+)
+
+// platformPreExcludeAddrs on macOS returns addresses that should be excluded from TUN routing.
+// macOS lacks fwmark, so direct DNS servers used by v2ray/xray must be excluded
+// to prevent DNS traffic loops (TUN captures outbound DNS → v2ray/xray sends
+// another DNS query → TUN captures again → infinite loop).
 func platformPreExcludeAddrs() []netip.Prefix {
-	return nil
+	var prefixes []netip.Prefix
+
+	dnsRules := configure.GetDnsRulesNotNil()
+
+	for _, rule := range dnsRules {
+		if rule.Outbound == "direct" {
+			dnsHosts := parseDNSServerHost(rule.Server)
+			for _, host := range dnsHosts {
+				ips := resolveDnsHost(host)
+				for _, ip := range ips {
+					prefix := netip.PrefixFrom(ip, ip.BitLen())
+					prefixes = append(prefixes, prefix)
+				}
+			}
+		}
+	}
+
+	return prefixes
 }
 
 // platformTunName 在 macOS 上返回空字符串。

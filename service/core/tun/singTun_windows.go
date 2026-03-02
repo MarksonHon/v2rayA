@@ -4,52 +4,10 @@
 package tun
 
 import (
-	"net"
 	"net/netip"
-	"strings"
 
 	"github.com/v2rayA/v2rayA/db/configure"
 )
-
-// parseDNSServerHost 解析 DNS 服务器地址字符串，返回主机名列表
-func parseDNSServerHost(server string) []string {
-	var hosts []string
-
-	// 处理 localhost
-	if server == "localhost" {
-		hosts = append(hosts, "127.0.0.1", "::1")
-		return hosts
-	}
-
-	// 处理带协议的地址
-	if strings.Contains(server, "://") {
-		// 移除协议前缀
-		server = strings.TrimPrefix(server, "https://")
-		server = strings.TrimPrefix(server, "tls://")
-		server = strings.TrimPrefix(server, "tcp://")
-		server = strings.TrimPrefix(server, "udp://")
-
-		// 如果包含路径，只取主机部分
-		if strings.Contains(server, "/") {
-			parts := strings.Split(server, "/")
-			server = parts[0]
-		}
-	}
-
-	// 处理带端口的地址
-	if strings.Contains(server, ":") {
-		// 分离主机和端口
-		host, _, err := net.SplitHostPort(server)
-		if err == nil && host != "" {
-			hosts = append(hosts, host)
-		}
-	} else {
-		// 纯 IP 或域名
-		hosts = append(hosts, server)
-	}
-
-	return hosts
-}
 
 // platformPreExcludeAddrs 在 Windows 上根据用户 DNS 配置返回需要排除的地址列表
 //

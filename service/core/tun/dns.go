@@ -94,14 +94,15 @@ func (d *DNS) NewConnection(ctx context.Context, conn net.Conn, metadata M.Metad
 				return
 			}
 			buffer := buf.NewSize(int(queryLength))
-			defer buffer.Release()
 			_, err = buffer.ReadFullFrom(conn, int(queryLength))
 			if err != nil {
+				buffer.Release()
 				cancel(err)
 				return
 			}
 			var message D.Msg
 			err = message.Unpack(buffer.Bytes())
+			buffer.Release() // Release immediately; data is copied into message
 			if err != nil {
 				cancel(err)
 				return
@@ -589,6 +590,9 @@ func (d *DNS) getAvailableIP6(domain string) (netip.Addr, bool) {
 }
 
 func (t *DNS) getServer() M.Socksaddr {
+	if len(t.servers) == 0 {
+		return defaultDNSServer
+	}
 	if len(t.servers) != 1 {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(t.servers))))
 		if err == nil {

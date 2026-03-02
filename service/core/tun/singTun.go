@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -216,6 +217,40 @@ func ResolveDnsServersToExcludes(dnsHosts []string) []netip.Prefix {
 	return excludes
 }
 
+// parseDNSServerHost parses a DNS server address string and returns the host parts.
+// Handles formats like "8.8.8.8", "localhost", "https://dns.google/dns-query", "1.1.1.1:53".
+func parseDNSServerHost(server string) []string {
+	var hosts []string
+
+	if server == "localhost" {
+		hosts = append(hosts, "127.0.0.1", "::1")
+		return hosts
+	}
+
+	if strings.Contains(server, "://") {
+		server = strings.TrimPrefix(server, "https://")
+		server = strings.TrimPrefix(server, "tls://")
+		server = strings.TrimPrefix(server, "tcp://")
+		server = strings.TrimPrefix(server, "udp://")
+
+		if strings.Contains(server, "/") {
+			parts := strings.Split(server, "/")
+			server = parts[0]
+		}
+	}
+
+	if strings.Contains(server, ":") {
+		host, _, err := net.SplitHostPort(server)
+		if err == nil && host != "" {
+			hosts = append(hosts, host)
+		}
+	} else {
+		hosts = append(hosts, server)
+	}
+
+	return hosts
+}
+
 func NewSingTun() Tun {
 	dialer := N.SystemDialer
 	client := socks.NewClient(dialer, M.ParseSocksaddrHostPort("127.0.0.1", 52345), socks.Version5, "", "")
@@ -303,6 +338,21 @@ func (t *singTun) Start(stack Stack) error {
 	inet4Exclude = append(inet4Exclude, loopback4)
 	log.Info("[TUN] Excluding loopback: 127.0.0.0/8")
 
+	// Exclude private/reserved IPv4 ranges to prevent traffic loops.
+	// When the TUN handler encounters these addresses, isReservedAddress()
+	// routes them to direct connections. Without excluding them from TUN
+	// routing, the direct connection packets would be recaptured by TUN,
+	// creating an infinite routing loop.
+	privateRanges4 := []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/8"),     // Class A private
+		netip.MustParsePrefix("172.16.0.0/12"),   // Class B private
+		netip.MustParsePrefix("192.168.0.0/16"),  // Class C private
+		netip.MustParsePrefix("169.254.0.0/16"),  // Link-local
+		netip.MustParsePrefix("224.0.0.0/4"),     // Multicast
+	}
+	inet4Exclude = append(inet4Exclude, privateRanges4...)
+	log.Info("[TUN] Excluding private/reserved IPv4 ranges to prevent traffic loops")
+
 	for _, prefix := range t.excludeAddrs {
 		if prefix.Addr().Is4() {
 			inet4Exclude = append(inet4Exclude, prefix)
@@ -380,11 +430,15 @@ func (t *singTun) Start(stack Stack) error {
 	if t.useIPv6 {
 		tunOptions.Inet6Address = []netip.Prefix{prefix6}
 		tunOptions.Inet6RouteAddress = []netip.Prefix{route6}
-		// Exclude IPv6 loopback (::1/128)
+		// Exclude IPv6 loopback and reserved ranges to prevent traffic loops.
+		// Note: fc00::/7 (ULA) is NOT excluded because our TUN IPv6 address
+		// (fdfe:dcba:9876::1) and FakeIP range (fc00::/18) reside within it.
 		loopback6 := netip.MustParsePrefix("::1/128")
-		inet6Exclude = append([]netip.Prefix{loopback6}, inet6Exclude...)
+		linkLocal6 := netip.MustParsePrefix("fe80::/10")
+		multicast6 := netip.MustParsePrefix("ff00::/8")
+		inet6Exclude = append([]netip.Prefix{loopback6, linkLocal6, multicast6}, inet6Exclude...)
 		tunOptions.Inet6RouteExcludeAddress = inet6Exclude
-		log.Info("[TUN] Excluding IPv6 loopback: ::1/128")
+		log.Info("[TUN] Excluding IPv6 loopback, link-local, and multicast ranges")
 
 		// Add IPv6 DNS server
 		dnsAddrIPv6, _ := netip.ParseAddr(dnsAddr6)
