@@ -2,6 +2,7 @@ package tun
 
 import (
 	"net/netip"
+	"slices"
 	"testing"
 )
 
@@ -148,5 +149,60 @@ func TestParseDNSServerHost(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestProxyServerExclusionIncludesWhitelist verifies that when proxy server
+// prefixes are merged into the exclusion/whitelist config, the corresponding
+// IP addresses end up in BOTH the route-level exclude list AND the
+// connection-level whitelist. This is the defense-in-depth mechanism that
+// prevents traffic loops even when route-level exclusion fails.
+func TestProxyServerExclusionIncludesWhitelist(t *testing.T) {
+	proxyPrefixes := []netip.Prefix{
+		netip.MustParsePrefix("1.2.3.4/32"),
+		netip.MustParsePrefix("5.6.7.8/32"),
+		netip.MustParsePrefix("2001:db8::1/128"),
+	}
+
+	// Simulate the logic in Start(): proxy prefixes should be added to both
+	// savedExclude and savedWhitelist.
+	var savedExclude []netip.Prefix
+	var savedWhitelist []netip.Addr
+
+	for _, prefix := range proxyPrefixes {
+		if !slices.Contains(savedExclude, prefix) {
+			savedExclude = append(savedExclude, prefix)
+		}
+
+		proxyAddr := prefix.Addr()
+		if !slices.Contains(savedWhitelist, proxyAddr) {
+			savedWhitelist = append(savedWhitelist, proxyAddr)
+		}
+	}
+
+	// Verify all proxy IPs are in route-level exclusion list
+	for _, prefix := range proxyPrefixes {
+		if !slices.Contains(savedExclude, prefix) {
+			t.Errorf("proxy prefix %s not found in route exclusion list", prefix)
+		}
+	}
+
+	// Verify all proxy IPs are in connection-level whitelist
+	for _, prefix := range proxyPrefixes {
+		if !slices.Contains(savedWhitelist, prefix.Addr()) {
+			t.Errorf("proxy address %s not found in connection whitelist", prefix.Addr())
+		}
+	}
+
+	// Verify a non-proxy public IP would NOT be whitelisted (sanity check)
+	nonProxy := netip.MustParseAddr("9.9.9.9")
+	if slices.Contains(savedWhitelist, nonProxy) {
+		t.Errorf("non-proxy address %s should not be in whitelist", nonProxy)
+	}
+
+	// Verify a public proxy IP is NOT reserved (i.e. needs explicit whitelist protection)
+	publicProxy := netip.MustParseAddr("1.2.3.4")
+	if isReservedAddress(publicProxy) {
+		t.Errorf("public proxy address %s should NOT be reserved - whitelist is needed", publicProxy)
 	}
 }

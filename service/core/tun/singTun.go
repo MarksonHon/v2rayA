@@ -303,7 +303,12 @@ func (t *singTun) Start(stack Stack) error {
 		}
 	}
 
-	// Add connected proxy server addresses to exclusion list to prevent routing loops
+	// Add connected proxy server addresses to both the route-level exclusion list
+	// AND the connection-level whitelist to prevent routing loops.
+	// Route-level exclusion (savedExclude) tells the OS to bypass TUN for these IPs.
+	// Connection-level whitelist (savedWhitelist) ensures that if route-level exclusion
+	// fails (e.g. on some platforms), the TUN handler routes them directly instead of
+	// forwarding through SOCKS5 back to the proxy server (which would cause a loop).
 	proxyServerPrefixes := getConnectedProxyServerPrefixes()
 	for _, prefix := range proxyServerPrefixes {
 		exists := false
@@ -315,7 +320,15 @@ func (t *singTun) Start(stack Stack) error {
 		}
 		if !exists {
 			savedExclude = append(savedExclude, prefix)
-			log.Info("[TUN] Added proxy server to exclusion list: %s", prefix)
+			log.Info("[TUN] Added proxy server to route exclusion list: %s", prefix)
+		}
+
+		// Also add to connection-level whitelist so the TUN handler
+		// routes proxy server traffic directly (defense in depth).
+		proxyAddr := prefix.Addr()
+		if !slices.Contains(savedWhitelist, proxyAddr) {
+			savedWhitelist = append(savedWhitelist, proxyAddr)
+			log.Info("[TUN] Added proxy server to connection whitelist: %s", proxyAddr)
 		}
 	}
 
