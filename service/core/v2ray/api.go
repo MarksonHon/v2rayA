@@ -86,7 +86,9 @@ func ObservatoryProducer(apiPort int, observatoryTags []string) (closeFunc func(
 			select {
 			case <-closed:
 				if conn != nil {
-					conn.Close()
+					if err := conn.Close(); err != nil {
+						log.Warn("ObservatoryProducer: close connection: %v", err)
+					}
 				}
 				return
 			default:
