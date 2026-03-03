@@ -518,6 +518,18 @@ func (t *singTun) Start(stack Stack) error {
 	}
 	// Note: Do not clear t.whitelist here.
 	// t.whitelist is the IP whitelist for connection layer (direct connection guarantee), must remain valid throughout TUN lifecycle.
+
+	// Verify that all proxy server addresses have been properly excluded.
+	//
+	// Unlike sing-box, which prevents traffic loops by binding outbound sockets
+	// to the physical interface (auto_detect_interface / bind_to_device),
+	// v2rayA relies on two defense layers:
+	//   1. Route-level exclusion (excludeAddrs → Inet4/6RouteExcludeAddress)
+	//   2. Connection-level whitelist (whitelist → direct dial in newConnection)
+	// This verification logs warnings if any proxy server IP is missing from
+	// either layer, which could cause a traffic loop.
+	t.verifyProxyServerExclusion()
+
 	return nil
 }
 
@@ -547,6 +559,68 @@ func (t *singTun) Close() error {
 	}
 	t.mu.Unlock()
 	return nil
+}
+
+// verifyProxyServerExclusion checks that all connected proxy server addresses
+// are present in both the route-level exclusion list and the connection-level
+// whitelist. Logs warnings for any gaps that could lead to traffic loops.
+//
+// Background: sing-box prevents proxy traffic loops by binding outbound sockets
+// to the physical interface (auto_detect_interface + bind_to_device). v2rayA
+// cannot use socket binding because v2ray/xray manages its own sockets, so it
+// relies on two complementary defense layers instead:
+//
+//   - Route-level: proxy server IPs are excluded from TUN routes so the OS
+//     never sends proxy traffic into the TUN interface.
+//   - Connection-level: proxy server IPs are in the whitelist so the TUN
+//     handler routes them directly (not through SOCKS5) as a safety net.
+//
+// This method verifies both layers are in place after Start() completes.
+func (t *singTun) verifyProxyServerExclusion() {
+	css := configure.GetConnectedServers()
+	if css == nil {
+		return
+	}
+
+	for _, which := range css.Get() {
+		serverRaw, err := which.LocateServerRaw()
+		if err != nil {
+			continue
+		}
+
+		hostname := serverRaw.ServerObj.GetHostname()
+		ips := resolveDnsHost(hostname)
+
+		for _, ip := range ips {
+			inWhitelist, inExclude := checkProxyIPExcluded(ip, t.whitelist, t.excludeAddrs)
+
+			if isReservedAddress(ip) {
+				log.Trace("[TUN] Proxy server %s (%s) is a reserved address, always direct", hostname, ip)
+				continue
+			}
+
+			if !inWhitelist {
+				log.Warn("[TUN] VERIFY: proxy server %s (%s) NOT in connection whitelist — traffic loop risk!", hostname, ip)
+			}
+			if !inExclude {
+				log.Warn("[TUN] VERIFY: proxy server %s (%s) NOT in route exclusion list — traffic loop risk!", hostname, ip)
+			}
+		}
+	}
+	log.Info("[TUN] Proxy server exclusion verification completed")
+}
+
+// checkProxyIPExcluded verifies a single IP against both defense layers.
+// Returns (inWhitelist, inExclude) indicating whether the IP is present
+// in each list. Reserved addresses always return (true, true).
+func checkProxyIPExcluded(ip netip.Addr, whitelist []netip.Addr, excludeAddrs []netip.Prefix) (inWhitelist, inExclude bool) {
+	if isReservedAddress(ip) {
+		return true, true
+	}
+	inWhitelist = slices.Contains(whitelist, ip)
+	prefix := netip.PrefixFrom(ip, ip.BitLen())
+	inExclude = slices.Contains(excludeAddrs, prefix)
+	return
 }
 
 func (t *singTun) AddDomainWhitelist(domain string) {

@@ -206,3 +206,48 @@ func TestProxyServerExclusionIncludesWhitelist(t *testing.T) {
 		t.Errorf("public proxy address %s should NOT be reserved - whitelist is needed", publicProxy)
 	}
 }
+
+// TestCheckProxyIPExcluded verifies the per-IP exclusion check logic used by
+// verifyProxyServerExclusion. This is the function that determines whether a
+// proxy server IP is properly protected at both the route level and the
+// connection level.
+func TestCheckProxyIPExcluded(t *testing.T) {
+	whitelist := []netip.Addr{
+		netip.MustParseAddr("1.2.3.4"),
+		netip.MustParseAddr("5.6.7.8"),
+	}
+	excludeAddrs := []netip.Prefix{
+		netip.MustParsePrefix("1.2.3.4/32"),
+		netip.MustParsePrefix("5.6.7.8/32"),
+	}
+
+	tests := []struct {
+		name            string
+		ip              string
+		wantWhitelisted bool
+		wantExcluded    bool
+	}{
+		// Public IPs in both lists → fully protected
+		{"in both lists", "1.2.3.4", true, true},
+		{"in both lists v2", "5.6.7.8", true, true},
+		// Public IP missing from both → NOT protected (traffic loop risk)
+		{"missing from both", "9.9.9.9", false, false},
+		// Reserved addresses always return (true, true)
+		{"loopback reserved", "127.0.0.1", true, true},
+		{"private reserved", "192.168.1.1", true, true},
+		{"ipv6 reserved", "::1", true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ip := netip.MustParseAddr(tt.ip)
+			gotW, gotE := checkProxyIPExcluded(ip, whitelist, excludeAddrs)
+			if gotW != tt.wantWhitelisted {
+				t.Errorf("checkProxyIPExcluded(%s) inWhitelist = %v, want %v", tt.ip, gotW, tt.wantWhitelisted)
+			}
+			if gotE != tt.wantExcluded {
+				t.Errorf("checkProxyIPExcluded(%s) inExclude = %v, want %v", tt.ip, gotE, tt.wantExcluded)
+			}
+		})
+	}
+}
