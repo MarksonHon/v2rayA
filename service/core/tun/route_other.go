@@ -14,6 +14,11 @@ import (
 
 var excludedRoutes []netip.Prefix
 
+// SetupPreTunRouteRules is a no-op on FreeBSD/OpenBSD.
+func SetupPreTunRouteRules() error {
+	return nil
+}
+
 // SetupTunRouteRules is a no-operation on FreeBSD/OpenBSD.
 // These platforms do not currently support policy routing rule configuration.
 func SetupTunRouteRules() error {

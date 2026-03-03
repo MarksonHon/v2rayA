@@ -469,6 +469,16 @@ func (t *singTun) Start(stack Stack) error {
 	if len(dnsServers) > 0 {
 		tunOptions.DNSServers = dnsServers
 	}
+	// Install fwmark bypass rules BEFORE creating the TUN interface.
+	// On Linux, tun.New() will activate sing-tun's routing rules (pref 9000+)
+	// that redirect public-IP traffic into TUN. Without the fwmark bypass
+	// rule (pref 100) already in place, v2ray/xray outbound traffic (marked
+	// 0x80) would be captured by TUN, creating a routing loop that makes the
+	// core unresponsive (causing "context deadline exceeded" on the API).
+	if err := SetupPreTunRouteRules(); err != nil {
+		log.Warn("[TUN] SetupPreTunRouteRules failed: %v", err)
+	}
+
 	tunInterface, err := tun.New(tunOptions)
 	if err != nil {
 		return err

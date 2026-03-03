@@ -55,6 +55,13 @@ func setTunRouteAutoMode(auto bool) {
 	tunAutoRoute = auto
 }
 
+// SetupPreTunRouteRules is a no-op on Windows.
+// Windows does not support fwmark; route-level exclusion is handled by
+// SetupTunRouteRules / SetupExcludeRoutes after TUN creation.
+func SetupPreTunRouteRules() error {
+	return nil
+}
+
 // SetupTunRouteRules 在 Windows 上通过 netsh 手动建立 TUN 默认路由。
 //
 // 当 AutoRoute 开启时，sing-tun 已通过 winipcfg 管理路由，本函数为空操作。

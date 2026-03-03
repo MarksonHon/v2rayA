@@ -14,6 +14,12 @@ import (
 
 var excludedRoutes []netip.Prefix
 
+// SetupPreTunRouteRules is a no-op on macOS.
+// macOS does not support fwmark; there is no pre-TUN rule to install.
+func SetupPreTunRouteRules() error {
+	return nil
+}
+
 // SetupTunRouteRules is a no-op on macOS.
 //
 // macOS does not support fwmark policy routing. sing-tun's AutoRoute

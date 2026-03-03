@@ -17,9 +17,19 @@ const (
 	FWMARK = 0x80
 )
 
-// SetupTunRouteRules configures policy routing rules to make marked traffic bypass the TUN interface.
-// This prevents traffic from v2ray/xray core and plugins from being captured by the TUN, avoiding routing loops.
-func SetupTunRouteRules() error {
+// SetupPreTunRouteRules installs fwmark-based policy routing rules BEFORE the
+// TUN interface is created.  This is critical to avoid a race condition:
+//
+//	tun.New() activates sing-tun routing rules (pref 9000+) that redirect
+//	public-IP traffic into the TUN interface.  If the fwmark bypass rule
+//	(pref 100) is not yet present, v2ray/xray outbound packets (marked 0x80)
+//	will also be captured → forwarded through SOCKS5 → back to v2ray →
+//	infinite routing loop → v2ray becomes unresponsive → Observatory API
+//	unreachable → "context deadline exceeded".
+//
+// By installing the fwmark rule first, marked traffic always uses the main
+// table regardless of when sing-tun's rules appear.
+func SetupPreTunRouteRules() error {
 	commands := []string{
 		// IPv4: make fwmark 0x80 traffic prioritize the main routing table
 		"ip rule add fwmark 0x80 table main pref 100 2>/dev/null || true",
@@ -28,10 +38,17 @@ func SetupTunRouteRules() error {
 	}
 	for _, cmd := range commands {
 		if err := cmds.ExecCommands(cmd, false); err != nil {
-			log.Warn("[TUN] SetupTunRouteRules: command execution failed '%s': %v", cmd, err)
+			log.Warn("[TUN] SetupPreTunRouteRules: command execution failed '%s': %v", cmd, err)
 		}
 	}
-	log.Info("[TUN] Linux policy routing rules (fwmark 0x80 to main table) set")
+	log.Info("[TUN] Linux fwmark bypass rules (pref 100) installed before TUN creation")
+	return nil
+}
+
+// SetupTunRouteRules is a no-op on Linux.
+// The fwmark policy routing rules are now installed early by SetupPreTunRouteRules
+// to prevent the race condition between TUN route activation and fwmark bypass.
+func SetupTunRouteRules() error {
 	return nil
 }
 

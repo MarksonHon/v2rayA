@@ -85,6 +85,9 @@ func ObservatoryProducer(apiPort int, observatoryTags []string) (closeFunc func(
 		for {
 			select {
 			case <-closed:
+				if conn != nil {
+					conn.Close()
+				}
 				return
 			default:
 			}
@@ -96,24 +99,24 @@ func ObservatoryProducer(apiPort int, observatoryTags []string) (closeFunc func(
 			// Set up a connection to the server.
 			if conn == nil {
 				ctx, cancel := context.WithTimeout(context.Background(), ApiFeedInterval)
-				defer cancel()
 				c, err := grpc.DialContext(
 					ctx,
 					net.JoinHostPort("127.0.0.1", strconv.Itoa(apiPort)),
 					grpc.WithInsecure(),
 					grpc.WithBlock(),
 				)
+				cancel() // release context immediately; do not defer inside a loop
 				if err != nil {
 					log.Warn("ObservatoryProducer: did not connect: %v", err)
 					continue nextLoop
 				}
-				defer c.Close()
 				conn = c
 			}
 			resps, err := getObservatoryResponses(conn, observatoryTags)
 			if err != nil {
 				if status.Code(err) == codes.Unavailable {
 					// the connection is reliable, and reconnect
+					conn.Close()
 					conn = nil
 					continue nextLoop
 				}
