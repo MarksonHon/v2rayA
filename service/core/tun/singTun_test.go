@@ -229,7 +229,7 @@ func TestCheckProxyIPExcluded(t *testing.T) {
 	}{
 		// Public IPs in both lists → fully protected
 		{"in both lists", "1.2.3.4", true, true},
-		{"in both lists v2", "5.6.7.8", true, true},
+		{"second IP in both lists", "5.6.7.8", true, true},
 		// Public IP missing from both → NOT protected (traffic loop risk)
 		{"missing from both", "9.9.9.9", false, false},
 		// Reserved addresses always return (true, true)

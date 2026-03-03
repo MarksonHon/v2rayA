@@ -594,11 +594,6 @@ func (t *singTun) verifyProxyServerExclusion() {
 		for _, ip := range ips {
 			inWhitelist, inExclude := checkProxyIPExcluded(ip, t.whitelist, t.excludeAddrs)
 
-			if isReservedAddress(ip) {
-				log.Trace("[TUN] Proxy server %s (%s) is a reserved address, always direct", hostname, ip)
-				continue
-			}
-
 			if !inWhitelist {
 				log.Warn("[TUN] VERIFY: proxy server %s (%s) NOT in connection whitelist — traffic loop risk!", hostname, ip)
 			}
