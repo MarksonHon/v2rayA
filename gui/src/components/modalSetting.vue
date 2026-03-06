@@ -63,7 +63,9 @@
         <b-select v-model="transparentType" expanded>
           <option v-show="!lite && os === 'linux'" value="redirect">redirect</option>
           <option v-show="!lite && os === 'linux'" value="tproxy">tproxy</option>
-          <option value="tun">tun (TinyTun)</option>
+          <option value="tun" :disabled="!tinytunSupported">
+            tun (TinyTun){{ !tinytunSupported ? ' — ' + $t("setting.options.notIntegrated") : '' }}
+          </option>
           <option v-show="!(isRoot && (os === 'linux' || os === 'darwin'))" value="system_proxy">system proxy</option>
         </b-select>
 
@@ -76,26 +78,21 @@
             " outlined @click="handleClickTproxyWhiteIpGroups">{{ $t("operations.tproxyWhiteIpGroups") }}
           </b-button>
         </template>
-      </b-field>
 
-      <b-field v-show="transparent !== 'close' && transparentType === 'tun'" label-position="on-border">
-        <template slot="label">
-          {{ $t("setting.tunAutoRoute") }}
-          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.tunAutoRoute')" position="is-right">
-            <b-icon size="is-small" icon=" iconfont icon-help-circle-outline"
-              style="position: relative; top: 2px; right: 3px; font-weight: normal" />
+        <template v-if="transparentType === 'tun' && tinytunSupported">
+          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.tunAutoRoute')" position="is-top">
+            <b-checkbox-button v-model="tunAutoRoute" :native-value="true" style="position: relative; left: -1px">
+              {{ $t("setting.tunAutoRoute") }}
+            </b-checkbox-button>
           </b-tooltip>
+          <b-button v-if="!tunAutoRoute" style="
+              margin-left: 0;
+              border-bottom-left-radius: 0;
+              border-top-left-radius: 0;
+              color: rgba(0, 0, 0, 0.75);
+            " outlined @click="handleClickTunRouteScript">{{ $t("operations.configureTunRouteScript") }}
+          </b-button>
         </template>
-        <b-checkbox-button v-model="tunAutoRoute" :native-value="true" style="position: relative; left: -1px">
-          {{ $t("setting.options.on") }}
-        </b-checkbox-button>
-        <b-button v-if="!tunAutoRoute" style="
-            margin-left: 0;
-            border-bottom-left-radius: 0;
-            border-top-left-radius: 0;
-            color: rgba(0, 0, 0, 0.75);
-          " outlined @click="handleClickTunRouteScript">{{ $t("operations.configureTunRouteScript") }}
-        </b-button>
       </b-field>
 
       <b-field v-show="transparent !== 'close' && (transparentType === 'tproxy' || transparentType === 'redirect')"
@@ -334,6 +331,7 @@ export default {
     localGFWListVersion: "checking...",
     os: "",
     isRoot: false,
+    tinytunSupported: false,
   }),
   computed: {
     lite() {
@@ -384,6 +382,7 @@ export default {
             if (versionRes.data && versionRes.data.data) {
               this.os = versionRes.data.data.os || "";
               this.isRoot = versionRes.data.data.isRoot || false;
+              this.tinytunSupported = versionRes.data.data.tinytunSupported || false;
             }
           });
           if (this.lite) {

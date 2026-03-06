@@ -1,3 +1,5 @@
+//go:build tinytun
+
 package v2ray
 
 import (
@@ -360,3 +362,5 @@ func stopTinyTun() {
 	}
 }
 
+// IsTinyTunEnabled reports whether TinyTun support was compiled into this binary.
+func IsTinyTunEnabled() bool { return true }
