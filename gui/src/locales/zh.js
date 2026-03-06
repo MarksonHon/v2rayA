@@ -111,8 +111,6 @@ export default {
     inboundSniffing: "嗅探",
     transparentProxy: "透明代理/系统代理",
     transparentType: "透明代理/系统代理实现方式",
-    tunMode: "TUN模式",
-    tunIPv6: "TUN IPv6",
     logLevel: "日志等级",
     pacMode: "规则端口的分流模式",
     mux: "多路复用",
@@ -157,10 +155,6 @@ export default {
         "★tproxy: 支持udp，不支持docker。★redirect: docker友好，不支持udp，需要占用本地53端口以应对dns污染。",
       tproxyExcludedInterfaces:
         "设置不经过透明代理的网卡前缀。支持通配符 * (iptables模式下会自动转换为 +)。例如: docker*, veth*, wg*, ppp*, br-*。多个前缀用逗号隔开。",
-      tunMode:
-        "★FakeIP: 使用虚拟IP加速DNS解析，提高性能。★RealIP: 使用真实IP，更适合某些特殊应用。",
-      tunIPv6:
-        "开启后TUN接口将支持IPv6流量。注意：需要系统支持IPv6网络。",
       pacMode:
         "该选项设置规则分流端口所使用的路由模式。默认情况下规则分流端口为20172，HTTP协议。",
       preventDnsSpoofing: "",

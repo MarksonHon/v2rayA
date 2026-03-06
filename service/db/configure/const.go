@@ -23,8 +23,6 @@ const (
 
 	TransparentTproxy      = TransparentType("tproxy")
 	TransparentRedirect    = TransparentType("redirect")
-	TransparentGvisorTun   = TransparentType("gvisor_tun")
-	TransparentSystemTun   = TransparentType("system_tun")
 	TransparentSystemProxy = TransparentType("system_proxy")
 
 	Default = DefaultYesNo("default")
