@@ -79,6 +79,18 @@
         </template>
       </b-field>
 
+      <b-field v-show="transparent !== 'close' && (transparentType === 'tproxy' || transparentType === 'redirect')"
+        label-position="on-border">
+        <template slot="label">
+          {{ $t("setting.tproxyExcludedInterfaces") }}
+          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.tproxyExcludedInterfaces')" position="is-right">
+            <b-icon size="is-small" icon=" iconfont icon-help-circle-outline"
+              style="position: relative; top: 2px; right: 3px; font-weight: normal" />
+          </b-tooltip>
+        </template>
+        <b-input v-model="tproxyExcludedInterfaces" expanded placeholder="docker*, veth*, wg*, ppp*, br-*" />
+      </b-field>
+
       <b-field v-show="tunEnabled" label-position="on-border">
         <template slot="label">
           {{ $t("setting.tunMode") }}
@@ -330,6 +342,7 @@ export default {
     portSharing: false,
     dnsForceMode: false,
     routeOnly: false,
+    tproxyExcludedInterfaces: "",
     pacAutoUpdateMode: "none",
     pacAutoUpdateIntervalHour: 0,
     subscriptionAutoUpdateMode: "none",
@@ -436,6 +449,7 @@ export default {
             ipforward: this.ipforward,
             portSharing: this.portSharing,
             routeOnly: this.routeOnly,
+            tproxyExcludedInterfaces: this.tproxyExcludedInterfaces,
           },
           cancelToken: new axios.CancelToken(function executor(c) {
             cancel = c;
