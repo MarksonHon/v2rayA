@@ -23,10 +23,6 @@ type Setting struct {
 	RouteOnly                          bool            `json:"routeOnly"`
 	PortSharing                        bool            `json:"portSharing"`
 	TransparentType                    TransparentType `json:"transparentType"`
-	TunFakeIP                          bool            `json:"tunFakeIP"`
-	TunIPv6                            bool            `json:"tunIPv6"`
-	TunStrictRoute                     bool            `json:"tunStrictRoute"`
-	TunAutoRoute                       bool            `json:"tunAutoRoute"`
 	TproxyExcludedInterfaces           string          `json:"tproxyExcludedInterfaces"`
 }
 
@@ -47,10 +43,6 @@ func NewSetting() (setting *Setting) {
 		IpForward:                          ipforward.IsIpForwardOn(),
 		PortSharing:                        false,
 		TransparentType:                    TransparentRedirect,
-		TunFakeIP:                          true,
-		TunIPv6:                            false,
-		TunStrictRoute:                     false,
-		TunAutoRoute:                       true,
 		TproxyExcludedInterfaces:           "docker*,veth*,wg*,ppp*,br-*",
 	}
 }
