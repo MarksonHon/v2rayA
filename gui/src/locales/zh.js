@@ -92,7 +92,8 @@ export default {
     switchSite: "切换至备用站点",
     addOutbound: "新增一个出站 (outbound)",
     domainsExcluded: "排除域名",
-    tproxyExcludedInterfaces: "不走代理的网卡前缀"
+    tproxyExcludedInterfaces: "不走代理的网卡前缀",
+    configureTunRouteScript: "配置路由脚本"
   },
   register: {
     title: "初来乍到，创建一个管理员账号",
@@ -118,6 +119,7 @@ export default {
     autoUpdateGfwlist: "自动更新GFWList",
     preferModeWhenUpdate: "解析订阅链接/更新时优先使用",
     tproxyExcludedInterfaces: "不走代理的网卡前缀",
+    tunAutoRoute: "自动路由（TinyTun）",
     ipForwardOn: "开启IP转发",
     portSharingOn: "允许局域网的连接",
     concurrency: "最大并发数",
@@ -155,6 +157,8 @@ export default {
         "★tproxy: 支持udp，不支持docker。★redirect: docker友好，不支持udp，需要占用本地53端口以应对dns污染。★tun (TinyTun): 跨平台TUN透明代理，需要tinytun二进制文件。",
       tproxyExcludedInterfaces:
         "设置不经过透明代理的网卡前缀。支持通配符 * (iptables模式下会自动转换为 +)。例如: docker*, veth*, wg*, ppp*, br-*。多个前缀用逗号隔开。",
+      tunAutoRoute:
+        "开启时，TinyTun 自动配置系统路由。关闭时，需要提供自定义的启动/停止脚本手动配置路由。",
       pacMode:
         "该选项设置规则分流端口所使用的路由模式。默认情况下规则分流端口为20172，HTTP协议。",
       preventDnsSpoofing: "",
@@ -385,5 +389,19 @@ export default {
     ],
     formName: "自定义下载链接",
     wrongCustomLink: "错误的自定义下载链接"
+  },
+  tinytun: {
+    routeScript: {
+      title: "TinyTun 自定义路由脚本",
+      warning: "警告：错误的脚本可能会破坏您的网络或系统路由。请确保您清楚自己正在做什么再保存。",
+      shellType: "Shell 类型",
+      customShell: "自定义（在下方指定路径）",
+      shellPath: "Shell 路径",
+      shellPathPlaceholder: "/usr/bin/bash",
+      setupScript: "启动脚本（TinyTun 启动后执行）",
+      setupScriptPlaceholder: "# TinyTun 启动时配置路由的脚本\n# 例如: ip route add default dev tun0",
+      teardownScript: "停止脚本（TinyTun 停止前执行）",
+      teardownScriptPlaceholder: "# TinyTun 停止时移除路由的脚本\n# 例如: ip route del default dev tun0",
+    }
   }
 };
