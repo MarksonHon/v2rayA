@@ -63,6 +63,9 @@
         <b-select v-model="transparentType" expanded>
           <option v-show="!lite && os === 'linux'" value="redirect">redirect</option>
           <option v-show="!lite && os === 'linux'" value="tproxy">tproxy</option>
+          <option value="tun" :disabled="!tinytunSupported">
+            tun (TinyTun){{ !tinytunSupported ? ' — ' + $t("setting.options.notIntegrated") : '' }}
+          </option>
           <option v-show="!(isRoot && (os === 'linux' || os === 'darwin'))" value="system_proxy">system proxy</option>
         </b-select>
 
@@ -73,6 +76,21 @@
               border-top-left-radius: 0;
               color: rgba(0, 0, 0, 0.75);
             " outlined @click="handleClickTproxyWhiteIpGroups">{{ $t("operations.tproxyWhiteIpGroups") }}
+          </b-button>
+        </template>
+
+        <template v-if="transparentType === 'tun' && tinytunSupported">
+          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.tunAutoRoute')" position="is-top">
+            <b-checkbox-button v-model="tunAutoRoute" :native-value="true" style="position: relative; left: -1px">
+              {{ $t("setting.tunAutoRoute") }}
+            </b-checkbox-button>
+          </b-tooltip>
+          <b-button v-if="!tunAutoRoute" style="
+              margin-left: 0;
+              border-bottom-left-radius: 0;
+              border-top-left-radius: 0;
+              color: rgba(0, 0, 0, 0.75);
+            " outlined @click="handleClickTunRouteScript">{{ $t("operations.configureTunRouteScript") }}
           </b-button>
         </template>
       </b-field>
@@ -88,6 +106,7 @@
         </template>
         <b-input v-model="tproxyExcludedInterfaces" expanded placeholder="docker*, veth*, wg*, ppp*, br-*" />
       </b-field>
+
 
       <b-field label-position="on-border">
         <template slot="label">
@@ -268,6 +287,7 @@ import ModalCustomRoutingA from "@/components/modalCustomRoutingA";
 import modalDomainsExcluded from "@/components/modalDomainsExcluded";
 import modalTproxyWhiteIpGroups from "@/components/modalTproxyWhiteIpGroups";
 import modalUpdateGfwList from "@/components/modalUpdateGfwList";
+import modalTinyTunRouteScript from "@/components/modalTinyTunRouteScript";
 import CusBInput from "./input/Input.vue";
 import { parseURL, toInt } from "@/assets/js/utils";
 import BButton from "buefy/src/components/button/Button";
@@ -293,6 +313,11 @@ export default {
     dnsForceMode: false,
     routeOnly: false,
     tproxyExcludedInterfaces: "",
+    tunAutoRoute: true,
+    tunRouteShellType: "",
+    tunRouteShellPath: "",
+    tunSetupScript: "",
+    tunTeardownScript: "",
     pacAutoUpdateMode: "none",
     pacAutoUpdateIntervalHour: 0,
     subscriptionAutoUpdateMode: "none",
@@ -306,6 +331,7 @@ export default {
     localGFWListVersion: "checking...",
     os: "",
     isRoot: false,
+    tinytunSupported: false,
   }),
   computed: {
     lite() {
@@ -356,6 +382,7 @@ export default {
             if (versionRes.data && versionRes.data.data) {
               this.os = versionRes.data.data.os || "";
               this.isRoot = versionRes.data.data.isRoot || false;
+              this.tinytunSupported = versionRes.data.data.tinytunSupported || false;
             }
           });
           if (this.lite) {
@@ -391,6 +418,11 @@ export default {
             portSharing: this.portSharing,
             routeOnly: this.routeOnly,
             tproxyExcludedInterfaces: this.tproxyExcludedInterfaces,
+            tunAutoRoute: this.tunAutoRoute,
+            tunRouteShellType: this.tunRouteShellType,
+            tunRouteShellPath: this.tunRouteShellPath,
+            tunSetupScript: this.tunSetupScript,
+            tunTeardownScript: this.tunTeardownScript,
           },
           cancelToken: new axios.CancelToken(function executor(c) {
             cancel = c;
@@ -488,6 +520,29 @@ export default {
         component: modalDnsSetting,
         hasModalCard: true,
         canCancel: true,
+      });
+    },
+    handleClickTunRouteScript() {
+      this.$buefy.modal.open({
+        parent: this,
+        component: modalTinyTunRouteScript,
+        hasModalCard: true,
+        canCancel: true,
+        props: {
+          os: this.os,
+          shellType: this.tunRouteShellType,
+          shellPath: this.tunRouteShellPath,
+          setupScript: this.tunSetupScript,
+          teardownScript: this.tunTeardownScript,
+        },
+        events: {
+          save: (data) => {
+            this.tunRouteShellType = data.shellType;
+            this.tunRouteShellPath = data.shellPath;
+            this.tunSetupScript = data.setupScript;
+            this.tunTeardownScript = data.teardownScript;
+          },
+        },
       });
     },
   },

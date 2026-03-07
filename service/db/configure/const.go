@@ -24,6 +24,7 @@ const (
 	TransparentTproxy      = TransparentType("tproxy")
 	TransparentRedirect    = TransparentType("redirect")
 	TransparentSystemProxy = TransparentType("system_proxy")
+	TransparentTun         = TransparentType("tun")
 
 	Default = DefaultYesNo("default")
 	Yes     = DefaultYesNo("yes")

@@ -12,6 +12,7 @@ import (
 )
 
 func deleteTransparentProxyRules() {
+	stopTinyTun()
 	iptables.CloseWatcher()
 	if !conf.GetEnvironmentConfig().Lite {
 		removeResolvHijacker()
@@ -23,7 +24,7 @@ func deleteTransparentProxyRules() {
 	time.Sleep(30 * time.Millisecond)
 }
 
-func writeTransparentProxyRules() (err error) {
+func writeTransparentProxyRules(tmpl *Template) (err error) {
 	defer func() {
 		if err != nil {
 			log.Warn("writeTransparentProxyRules: %v", err)
@@ -32,6 +33,8 @@ func writeTransparentProxyRules() (err error) {
 	}()
 	setting := configure.GetSettingNotNil()
 	switch setting.TransparentType {
+	case configure.TransparentTun:
+		return startTinyTun(tmpl)
 	case configure.TransparentTproxy:
 		if err = iptables.Tproxy.GetSetupCommands().Run(true); err != nil {
 			if strings.Contains(err.Error(), "TPROXY") && strings.Contains(err.Error(), "No chain") {

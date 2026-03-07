@@ -1284,6 +1284,13 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 				},
 				Tag: "transparent-socks",
 			})
+		case configure.TransparentTun:
+			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
+				Port:     tinytunSocksPort,
+				Protocol: "socks",
+				Listen:   "127.0.0.1",
+				Tag:      "transparent",
+			})
 		}
 
 	}
