@@ -8,37 +8,9 @@ on:
         required: true
 jobs:
   Build_v2rayA_Web:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-    - name: Set up Node.js
-      shell: bash
-      run: |
-        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-        brew install node@24
-        echo "PATH=\"$(brew --prefix)/opt/node@24/bin:$PATH\"" >> $GITHUB_ENV
-        echo "PATH=\"$(brew --prefix)/opt/node@24/bin:$PATH\"" >> ~/.bash_profile
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update -y && sudo apt-get install -y gzip
-    - name: Build GUI
-      run: |
-        yarn --cwd gui --check-files
-        yarn --cwd gui build
-        echo "Use tar to generate web.tar.gz..."
-        tar -zcvf web.tar.gz web/
-    - name: Upload Zip File to Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        path: web/*
-        name: web
-    - name: Upload the tar archive to Artifacts
-      uses: nanoufo/action-upload-artifacts-and-release-assets@v2
-      with:
-        path: |
-          web.tar.gz
+    uses: ./.github/workflows/_build_web.yml
+    with:
+      upload_archive: true
   Build_v2rayA_Binaries:
     runs-on: ubuntu-latest
     needs: [Build_v2rayA_Web]
@@ -76,13 +48,23 @@ jobs:
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Path v2raya_binaries
-        foreach ($arch in @('amd64', 'arm64', '386', 'riscv64', 'mips64', 'mips64le', 'mipsle', 'mips', 'loong64')) {
+        # Linux amd64 and arm64: TinyTun supported
+        foreach ($arch in @('amd64', 'arm64')) {
+          $env:GOARCH = $arch
+          $filename = $((Get-Content ./install/friendly-filenames.json | ConvertFrom-Json)."linux-$arch")."friendlyName"
+          Set-Location -Path service
+          go build -tags "tinytun" -o ../v2raya_binaries/v2raya_${filename}_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
+          Set-Location -Path ..
+        }
+        # Linux other architectures: no TinyTun
+        foreach ($arch in @('386', 'riscv64', 'mips64', 'mips64le', 'mipsle', 'mips', 'loong64')) {
           $env:GOARCH = $arch
           $filename = $((Get-Content ./install/friendly-filenames.json | ConvertFrom-Json)."linux-$arch")."friendlyName"
           Set-Location -Path service
           go build -o ../v2raya_binaries/v2raya_${filename}_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
           Set-Location -Path ..
         }
+        # Linux armv7: no TinyTun
         foreach ($arm in @('7')) {
           $env:GOARCH = 'arm'
           $env:GOARM = $arm
@@ -91,22 +73,25 @@ jobs:
           go build -o ../v2raya_binaries/v2raya_${filename}_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
           Set-Location -Path ..
         }
+        # Windows amd64 and arm64: TinyTun supported
         foreach ($arch in @('amd64', 'arm64')) {
           $env:GOOS = 'windows'
           $env:GOARCH = $arch
           $filename = $((Get-Content ./install/friendly-filenames.json | ConvertFrom-Json)."windows-$arch")."friendlyName"
           Set-Location -Path service
-          go build -o ../v2raya_binaries/v2raya_${filename}_${env:VERSION}.exe -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
+          go build -tags "tinytun" -o ../v2raya_binaries/v2raya_${filename}_${env:VERSION}.exe -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
           Set-Location -Path ..
         }
+        # macOS amd64 and arm64: TinyTun supported
         foreach ($arch in @('amd64', 'arm64')) {
           $env:GOOS = 'darwin'
           $env:GOARCH = $arch
           $filename = $((Get-Content ./install/friendly-filenames.json | ConvertFrom-Json)."darwin-$arch")."friendlyName"
           Set-Location -Path service
-          go build -o ../v2raya_binaries/v2raya_${filename}_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
+          go build -tags "tinytun" -o ../v2raya_binaries/v2raya_${filename}_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
           Set-Location -Path ..
         }
+        # FreeBSD: no TinyTun
         foreach ($arch in @('amd64', 'arm64')) {
           $env:GOOS = 'freebsd'
           $env:GOARCH = $arch
@@ -115,6 +100,7 @@ jobs:
           go build -o ../v2raya_binaries/v2raya_${filename}_${env:VERSION} -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${env:VERSION} -s -w" -trimpath
           Set-Location -Path ..
         }
+        # OpenBSD: no TinyTun
         foreach ($arch in @('amd64', 'arm64')) {
           $env:GOOS = 'openbsd'
           $env:GOARCH = $arch
