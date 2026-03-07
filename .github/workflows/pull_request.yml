@@ -53,7 +53,7 @@ jobs:
         cd "$CurrentDir"/service
         # All PR builds target amd64/arm64 on linux/windows/darwin — all support TinyTun
         for arch in amd64 arm64; do
-          GOARCH="$arch" CGO_ENABLED=0 go build -tags "with_gvisor,tinytun" -ldflags "-X github.com/v2rayA/v2rayA/conf.Version=$version -s -w" -o "$CurrentDir"/v2raya_bin/v2raya_pr_build_"$os"_"$arch"_"$version""$win_ex_name"
+          GOARCH="$arch" CGO_ENABLED=0 go build -tags "tinytun" -ldflags "-X github.com/v2rayA/v2rayA/conf.Version=$version -s -w" -o "$CurrentDir"/v2raya_bin/v2raya_pr_build_"$os"_"$arch"_"$version""$win_ex_name"
         done
     - name: Upload Zip File to Artifacts
       uses: nanoufo/action-upload-artifacts-and-release-assets@v2
