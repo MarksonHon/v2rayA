@@ -72,9 +72,11 @@ jobs:
         Copy-Item -Path ".\install\windows-inno\v2raya.ico" -Destination "D:\v2raya.ico"
         ## Copy TinyTun to Destination Directory
         Expand-Archive -Path "D:\tinytun-x64.zip" -DestinationPath "D:\tinytun-x64"
-        Move-Item -Path "D:\tinytun-x64\*" -Destination "D:\v2raya-x64compatible-windows\bin\"
+        Move-Item -Path "D:\tinytun-x64\tinytun-x86_64-pc-windows-msvc " -Destination "D:\v2raya-x64compatible-windows\bin\tinytun.exe"
+        Move-Item -Path "D:\tinytun-x64\wintun.dll" -Destination "D:\v2raya-x64compatible-windows\bin\wintun.dll"
         Expand-Archive -Path "D:\tinytun-arm64.zip" -DestinationPath "D:\tinytun-arm64"
-        Move-Item -Path "D:\tinytun-arm64\*" -Destination "D:\v2raya-arm64-windows\bin\"
+        Move-Item -Path "D:\tinytun-arm64\tinytun-aarch64-pc-windows-msvc " -Destination "D:\v2raya-arm64-windows\bin\tinytun.exe"
+        Move-Item -Path "D:\tinytun-arm64\wintun.dll" -Destination "D:\v2raya-arm64-windows\bin\wintun.dll"
         ## Download and extract v2ray
         $Url_v2ray_x64 = "https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-windows-64.zip"
         $Url_v2ray_A64 = "https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-windows-arm64-v8a.zip"
