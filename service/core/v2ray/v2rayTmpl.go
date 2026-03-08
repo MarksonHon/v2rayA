@@ -452,6 +452,13 @@ func (t *Template) setDNSRouting(routing []coreObj.RoutingRule, supportUDP map[s
 	t.Routing.Rules = append(t.Routing.Rules,
 		coreObj.RoutingRule{Type: "field", InboundTag: []string{"dns-in"}, OutboundTag: "direct"},
 	)
+	// Route dns-in-tun (TinyTun DNS door on 127.0.0.1:6053) into the DNS outbound
+	// so that v2fly DNS routing rules are applied.
+	if t.Setting != nil && t.Setting.TransparentType == configure.TransparentTun {
+		t.Routing.Rules = append(t.Routing.Rules,
+			coreObj.RoutingRule{Type: "field", InboundTag: []string{"dns-in-tun"}, OutboundTag: "dns-out"},
+		)
+	}
 	setting := t.Setting
 	// DNS is always active: hijack port-53 traffic into dns-out
 	if ShouldLocalDnsListen() {
@@ -1290,6 +1297,20 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 				Protocol: "socks",
 				Listen:   "127.0.0.1",
 				Tag:      "transparent",
+			})
+			// A dedicated dokodemo-door on 127.0.0.1:6053 receives DNS queries forwarded
+			// by TinyTun (dns.servers entries in tinytun.json point here) and feeds them
+			// into the v2fly DNS module so routing rules apply properly.
+			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
+				Port:     6053,
+				Protocol: "dokodemo-door",
+				Listen:   "127.0.0.1",
+				Settings: &coreObj.InboundSettings{
+					Network: "udp",
+					Address: "8.8.8.8",
+					Port:    53,
+				},
+				Tag: "dns-in-tun",
 			})
 		}
 

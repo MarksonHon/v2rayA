@@ -15,24 +15,32 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/v2rayA/v2rayA/conf"
+	"github.com/v2rayA/v2rayA/core/v2ray/where"
 	"github.com/v2rayA/v2rayA/db/configure"
 	"github.com/v2rayA/v2rayA/pkg/util/log"
 )
 
+// tinytunLogConf represents the log settings in TinyTun config.
+type tinytunLogConf struct {
+	Loglevel string `json:"loglevel"`
+}
+
 // tinytunTunConf represents the TUN interface settings in TinyTun config.
+// Note: auto_route is intentionally omitted here; it is passed as --auto-route CLI flag instead.
 type tinytunTunConf struct {
-	Name      string `json:"name"`
-	IP        string `json:"ip"`
-	Netmask   string `json:"netmask"`
-	Ipv6Mode  string `json:"ipv6_mode,omitempty"`
-	AutoRoute bool   `json:"auto_route"`
-	MTU       int    `json:"mtu,omitempty"`
+	Name     string `json:"name"`
+	IP       string `json:"ip"`
+	Netmask  string `json:"netmask"`
+	Ipv6Mode string `json:"ipv6_mode,omitempty"`
+	MTU      int    `json:"mtu,omitempty"`
 }
 
 // tinytunSocks5Conf represents the SOCKS5 proxy settings in TinyTun config.
 type tinytunSocks5Conf struct {
-	Address      string `json:"address"`
-	DnsOverSocks bool   `json:"dns_over_socks5"`
+	Address      string  `json:"address"`
+	Username     *string `json:"username"`
+	Password     *string `json:"password"`
+	DnsOverSocks bool    `json:"dns_over_socks5"`
 }
 
 // tinytunDnsServerConf represents a single DNS server entry in TinyTun config.
@@ -43,21 +51,34 @@ type tinytunDnsServerConf struct {
 
 // tinytunDnsConf represents the DNS settings in TinyTun config.
 type tinytunDnsConf struct {
-	Servers []tinytunDnsServerConf `json:"servers"`
+	Servers    []tinytunDnsServerConf `json:"servers"`
+	ListenPort int                    `json:"listen_port"`
+	TimeoutMs  int                    `json:"timeout_ms"`
 }
 
 // tinytunFilteringConf represents the filtering settings in TinyTun config.
 type tinytunFilteringConf struct {
-	SkipIPs      []string `json:"skip_ips,omitempty"`
-	SkipNetworks []string `json:"skip_networks,omitempty"`
+	SkipIPs          []string `json:"skip_ips"`
+	SkipNetworks     []string `json:"skip_networks"`
+	BlockPorts       []int    `json:"block_ports"`
+	AllowPorts       []int    `json:"allow_ports"`
+	ExcludeProcesses []string `json:"exclude_processes"`
+}
+
+// tinytunRouteConf represents the route settings in TinyTun config.
+type tinytunRouteConf struct {
+	AutoDetectInterface bool    `json:"auto_detect_interface"`
+	DefaultInterface    *string `json:"default_interface"`
 }
 
 // tinytunConfig is the top-level TinyTun JSON configuration.
 type tinytunConfig struct {
+	Log       tinytunLogConf       `json:"log"`
 	Tun       tinytunTunConf       `json:"tun"`
 	Socks5    tinytunSocks5Conf    `json:"socks5"`
 	DNS       tinytunDnsConf       `json:"dns"`
 	Filtering tinytunFilteringConf `json:"filtering"`
+	Route     tinytunRouteConf     `json:"route"`
 }
 
 const (
@@ -118,59 +139,215 @@ func resolveHostToIPs(hostname string) ([]string, error) {
 	return addrs, nil
 }
 
+func isResolvableHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	if strings.Contains(host, "/") {
+		return false
+	}
+	for _, prefix := range []string{"geoip:", "ext:", "regexp:", "domain:", "keyword:", "full:", "geosite:"} {
+		if strings.HasPrefix(host, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
 // collectNodeIPs returns the deduplicated list of IP addresses for all proxy
 // nodes referenced by tmpl. Domain-based node addresses are resolved to IPs.
 func collectNodeIPs(tmpl *Template) []string {
 	seen := make(map[string]struct{})
 	var result []string
-	for _, info := range tmpl.serverInfoMap {
-		hostname := info.Info.GetHostname()
+	appendIPs := func(hostname string) {
+		if !isResolvableHost(hostname) {
+			return
+		}
 		ips, err := resolveHostToIPs(hostname)
 		if err != nil {
 			log.Warn("tinytun: failed to resolve node hostname %v: %v", hostname, err)
-			continue
+			return
 		}
 		for _, ip := range ips {
-			if _, ok := seen[ip]; !ok {
-				seen[ip] = struct{}{}
-				result = append(result, ip)
+			if _, ok := seen[ip]; ok {
+				continue
 			}
+			seen[ip] = struct{}{}
+			result = append(result, ip)
 		}
 	}
+
+	// Source 1: read directly from the connected-server database.
+	// This is the most reliable source because it does not depend on whether
+	// serverInfoMap was populated (e.g. balancer paths skip serverInfoMap).
+	if css := configure.GetConnectedServers(); css != nil {
+		for _, cs := range css.Get() {
+			sr, err := cs.LocateServerRaw()
+			if err != nil {
+				log.Warn("tinytun: failed to locate server raw for skip_ips: %v", err)
+				continue
+			}
+			appendIPs(sr.ServerObj.GetHostname())
+		}
+	}
+
+	// Source 2: serverInfoMap in the template (covers cases where the template
+	// was constructed from a snapshot that may differ from the live DB state).
+	for _, info := range tmpl.serverInfoMap {
+		appendIPs(info.Info.GetHostname())
+	}
+
 	return result
+}
+
+func dedupeStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+// collectBypassInterfaceNetworks returns the IP network CIDRs of all active
+// interfaces whose names match any of the comma-separated glob patterns in
+// the patterns string.  It is used to populate skip_networks in the TinyTun
+// config so that traffic to these subnets bypasses the TUN proxy.
+func collectBypassInterfaceNetworks(patterns string) []string {
+	if patterns == "" {
+		return nil
+	}
+	var patternList []string
+	for _, p := range strings.Split(patterns, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			patternList = append(patternList, p)
+		}
+	}
+	if len(patternList) == 0 {
+		return nil
+	}
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		log.Warn("tinytun: failed to enumerate local interfaces: %v", err)
+		return nil
+	}
+
+	var networks []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		matched := false
+		for _, pattern := range patternList {
+			if ok, _ := filepath.Match(pattern, iface.Name); ok {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			log.Warn("tinytun: failed to list addresses for interface %v: %v", iface.Name, err)
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok || ipnet.IP == nil || ipnet.Mask == nil {
+				continue
+			}
+			networkIP := ipnet.IP.Mask(ipnet.Mask)
+			if networkIP == nil {
+				continue
+			}
+			networks = append(networks, (&net.IPNet{IP: networkIP, Mask: ipnet.Mask}).String())
+		}
+	}
+	return dedupeStrings(networks)
+}
+
+// collectExcludeProcesses returns the process basenames that should be excluded
+// from TinyTun proxying to prevent traffic loops.  It dynamically resolves
+// v2rayA's own executable and the v2ray/xray core binary; names are only added
+// when the path can actually be resolved, so no hardcoded strings are written.
+func collectExcludeProcesses() []string {
+	var processes []string
+
+	// Exclude v2rayA itself so its own outgoing connections are not captured.
+	if exe, err := os.Executable(); err == nil {
+		if name := filepath.Base(exe); name != "" && name != "." {
+			processes = append(processes, name)
+		}
+	} else {
+		log.Warn("tinytun: failed to resolve own executable for process exclusion: %v", err)
+	}
+
+	// Exclude the v2ray/xray core so its proxy-server connections bypass TUN.
+	if corePath, err := where.GetV2rayBinPath(); err == nil {
+		if name := filepath.Base(corePath); name != "" && name != "." {
+			processes = append(processes, name)
+		}
+	} else {
+		log.Warn("tinytun: failed to resolve core binary for process exclusion: %v", err)
+	}
+
+	return dedupeStrings(processes)
 }
 
 // generateTinyTunConfig generates a TinyTun JSON config file and returns its path.
 func generateTinyTunConfig(tmpl *Template) (string, error) {
 	setting := configure.GetSettingNotNil()
-	nodeIPs := collectNodeIPs(tmpl)
+	skipIPs := dedupeStrings(append([]string{"127.0.0.1", "198.18.0.1"}, collectNodeIPs(tmpl)...))
+	dnsServers := []tinytunDnsServerConf{
+		// Forward all DNS from TinyTun to the v2fly dns-in-tun dokodemo-door (127.0.0.1:6053).
+		// v2fly will apply its own DNS routing rules (direct / proxy) and return answers.
+		// Route is "direct" so TinyTun sends these packets straight to the local loopback
+		// without going through the SOCKS5 proxy.
+		{Address: "127.0.0.1:6053", Route: "direct"},
+	}
+	skipNetworks := dedupeStrings(collectBypassInterfaceNetworks(setting.TunBypassInterfaces))
 
 	cfg := tinytunConfig{
+		Log: tinytunLogConf{
+			Loglevel: setting.LogLevel,
+		},
 		Tun: tinytunTunConf{
-			Name:      "tun0",
-			IP:        "198.18.0.1",
-			Netmask:   "255.255.255.255",
-			AutoRoute: setting.TunAutoRoute,
-			MTU:       1500,
+			Name:    "tun0",
+			IP:      "198.18.0.1",
+			Netmask: "255.255.255.255",
+			MTU:     1500,
 		},
 		Socks5: tinytunSocks5Conf{
 			Address:      fmt.Sprintf("127.0.0.1:%d", tinytunSocksPort),
 			DnsOverSocks: true,
 		},
 		DNS: tinytunDnsConf{
-			Servers: []tinytunDnsServerConf{
-				{Address: "8.8.8.8:53", Route: "proxy"},
-			},
+			Servers:    dnsServers,
+			ListenPort: 53,
+			TimeoutMs:  5000,
 		},
 		Filtering: tinytunFilteringConf{
-			SkipIPs: nodeIPs,
-			SkipNetworks: []string{
-				"192.168.0.0/16",
-				"172.16.0.0/12",
-				"10.0.0.0/8",
-				"127.0.0.0/8",
-				"169.254.0.0/16",
-			},
+			SkipIPs:          skipIPs,
+			SkipNetworks:     skipNetworks,
+			BlockPorts:       []int{22, 23, 25, 110, 143},
+			AllowPorts:       []int{80, 443, 53},
+			ExcludeProcesses: collectExcludeProcesses(),
+		},
+		Route: tinytunRouteConf{
+			AutoDetectInterface: true,
 		},
 	}
 
@@ -317,7 +494,12 @@ func startTinyTun(tmpl *Template) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	_, err = RunWithLog(ctx, binPath, []string{binPath, "run", "--config", configPath}, "", os.Environ())
+	setting := configure.GetSettingNotNil()
+	args := []string{binPath, "run", "--config", configPath}
+	if setting.TunAutoRoute {
+		args = append(args, "--auto-route")
+	}
+	_, err = RunWithLog(ctx, binPath, args, "", os.Environ())
 	if err != nil {
 		cancel()
 		return fmt.Errorf("failed to start tinytun: %w", err)
@@ -331,7 +513,6 @@ func startTinyTun(tmpl *Template) error {
 	tinyTunState.mu.Unlock()
 
 	// Run user-defined setup script when auto_route is disabled.
-	setting := configure.GetSettingNotNil()
 	if !setting.TunAutoRoute {
 		if err = runTinyTunScript("setup", setting.TunSetupScript); err != nil {
 			log.Warn("tinytun setup script error: %v", err)

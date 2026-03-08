@@ -24,6 +24,7 @@ type Setting struct {
 	PortSharing                        bool            `json:"portSharing"`
 	TransparentType                    TransparentType `json:"transparentType"`
 	TproxyExcludedInterfaces           string          `json:"tproxyExcludedInterfaces"`
+	TunBypassInterfaces                string          `json:"tunBypassInterfaces"`
 	TunAutoRoute                       bool            `json:"tunAutoRoute"`
 	TunRouteShellType                  string          `json:"tunRouteShellType"`
 	TunRouteShellPath                  string          `json:"tunRouteShellPath"`

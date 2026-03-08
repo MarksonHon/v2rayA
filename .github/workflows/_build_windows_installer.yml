@@ -22,11 +22,37 @@ jobs:
       with:
         name: v2raya_windows_x64_${{ inputs.version }}.exe
         path: D:\Downloads
+    - name: Download TinyTun x64
+      shell: pwsh
+      run: |
+        $Url_TinyTun_x64 = "https://github.com/v2rayA/TinyTun/releases/download/v0.0.1-beta.1/tinytun-v0.0.1-beta.1-x86_64-pc-windows-msvc.zip"
+        $sha256_TinyTun_x64 = "d1320d6dd3c027ed557f35f6e4b134e17dc7c0fae432d33cb5893156d9bf8b8b"
+        Invoke-WebRequest $Url_TinyTun_x64 -OutFile "D:\tinytun-x64.zip"
+        $hash_TinyTun_x64 = Get-FileHash -Path "D:\tinytun-x64.zip" -Algorithm SHA256
+        if ($hash_TinyTun_x64.Hash -ne $sha256_TinyTun_x64) {
+          throw "SHA256 hash mismatch for TinyTun x64. Expected: $sha256_TinyTun_x64, Actual: $($hash_TinyTun_x64.Hash)"
+          exit 1
+        } else {
+          Write-Host "SHA256 hash verified for TinyTun x64."
+        }
     - name: Download Artifact Windows arm64
       uses: actions/download-artifact@v4
       with:
         name: v2raya_windows_arm64_${{ inputs.version }}.exe
         path: D:\Downloads
+    - name: Download TinyTun arm64
+      shell: pwsh
+      run: |
+        $Url_TinyTun_arm64 = "https://github.com/v2rayA/TinyTun/releases/download/v0.0.1-beta.1/tinytun-v0.0.1-beta.1-aarch64-pc-windows-msvc.zip"
+        $sha256_TinyTun_arm64 = "ba820140df263d89fd338d8e7d87ab0eb3067738eb64ce1b259157bcf7a0066b"
+        Invoke-WebRequest $Url_TinyTun_arm64 -OutFile "D:\tinytun-arm64.zip"
+        $hash_TinyTun_arm64 = Get-FileHash -Path "D:\tinytun-arm64.zip" -Algorithm SHA256
+        if ($hash_TinyTun_arm64.Hash -ne $sha256_TinyTun_arm64) {
+          throw "SHA256 hash mismatch for TinyTun arm64. Expected: $sha256_TinyTun_arm64, Actual: $($hash_TinyTun_arm64.Hash)"
+          exit 1
+        } else {
+          Write-Host "SHA256 hash verified for TinyTun arm64."
+        }
     - name: Install Inno Setup
       shell: pwsh
       run: |
@@ -44,6 +70,11 @@ jobs:
         Copy-Item -Path D:\Downloads\v2raya_windows_arm64_${{ inputs.version }}.exe -Destination D:\v2raya-arm64-windows\bin\v2raya.exe
         Copy-Item -Path D:\Downloads\v2raya_windows_x64_${{ inputs.version }}.exe -Destination D:\v2raya-x64compatible-windows\bin\v2raya.exe
         Copy-Item -Path ".\install\windows-inno\v2raya.ico" -Destination "D:\v2raya.ico"
+        ## Copy TinyTun to Destination Directory
+        Expand-Archive -Path "D:\tinytun-x64.zip" -DestinationPath "D:\tinytun-x64"
+        Move-Item -Path "D:\tinytun-x64\*" -Destination "D:\v2raya-x64compatible-windows\bin\"
+        Expand-Archive -Path "D:\tinytun-arm64.zip" -DestinationPath "D:\tinytun-arm64"
+        Move-Item -Path "D:\tinytun-arm64\*" -Destination "D:\v2raya-arm64-windows\bin\"
         ## Download and extract v2ray
         $Url_v2ray_x64 = "https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-windows-64.zip"
         $Url_v2ray_A64 = "https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-windows-arm64-v8a.zip"

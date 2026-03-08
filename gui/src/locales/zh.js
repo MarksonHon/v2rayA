@@ -120,6 +120,10 @@ export default {
     preferModeWhenUpdate: "解析订阅链接/更新时优先使用",
     tproxyExcludedInterfaces: "不走代理的网卡前缀",
     tunAutoRoute: "自动路由",
+    tunBypassInterfaces: "TUN 不走代理的网卡",
+    tunBypassCustomPlaceholder: "自定义通配符，例如: docker*, vmnet*",
+    tunBypassSelectPlaceholder: "选择网卡...",
+    tunBypassSelected: "已选 {n} 个网卡",
     ipForwardOn: "开启IP转发",
     portSharingOn: "允许局域网的连接",
     concurrency: "最大并发数",
@@ -160,6 +164,7 @@ export default {
         "设置不经过透明代理的网卡前缀。支持通配符 * (iptables模式下会自动转换为 +)。例如: docker*, veth*, wg*, ppp*, br-*。多个前缀用逗号隔开。",
       tunAutoRoute:
         "开启时，TinyTun 自动配置系统路由。关闭时，需要提供自定义的启动/停止脚本手动配置路由。",
+      tunBypassInterfaces: "勾选不走 TUN 代理的网卡，或在下方输入自定义通配符。",
       pacMode:
         "该选项设置规则分流端口所使用的路由模式。默认情况下规则分流端口为20172，HTTP协议。",
       preventDnsSpoofing: "",

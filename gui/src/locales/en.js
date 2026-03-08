@@ -120,6 +120,10 @@ export default {
     preferModeWhenUpdate: "Mode when Update Subscriptions and GFWList",
     tproxyExcludedInterfaces: "Excluded Interface Prefixes",
     tunAutoRoute: "Auto Route",
+    tunBypassInterfaces: "TUN Bypassed Interfaces",
+    tunBypassCustomPlaceholder: "Custom glob patterns, e.g. docker*, vmnet*",
+    tunBypassSelectPlaceholder: "Select interfaces...",
+    tunBypassSelected: "{n} interface(s) selected",
     ipForwardOn: "IP Forward",
     portSharingOn: "Port Sharing",
     concurrency: "Concurrency",
@@ -162,6 +166,7 @@ export default {
         "Set the network interface prefixes that should not pass through the transparent proxy. Wildcard * is supported (automatically converted to + in iptables mode). For example: docker*, veth*, wg*, ppp*, br-*. Use commas to separate multiple prefixes.",
       tunAutoRoute:
         "When enabled, TinyTun automatically configures system routes. When disabled, you must provide custom setup/teardown scripts to configure routing yourself.",
+      tunBypassInterfaces: "Select interfaces to exclude from TUN proxying, or enter custom glob patterns below.",
       pacMode: `Here you can set the splitting traffic rule of the rule port. By default, "Rule of Splitting Traffic" port is 20172 and HTTP protocol.`,
       preventDnsSpoofing: "",
       tcpFastOpen:
