@@ -101,9 +101,15 @@ jobs:
         cd $CurrentDir
         Copy-Item -Path D:\installer_windows_inno_x64compatible.exe -Destination $CurrentDir\installer_windows_inno_x64_${{ inputs.version }}.exe
         Copy-Item -Path D:\installer_windows_inno_arm64.exe -Destination $CurrentDir\installer_windows_inno_arm64_${{ inputs.version }}.exe
-    - name: Upload Artifact
+    - name: Upload x64 Build
       uses: actions/upload-artifact@v7
       with:
+        name: installer_windows_inno_x64_${{ inputs.version }}.exe
         path: |
           installer_windows_inno_x64_${{ inputs.version }}.exe
+    - name: Upload arm64 Build
+      uses: actions/upload-artifact@v7
+      with:
+        name: installer_windows_inno_arm64_${{ inputs.version }}.exe  
+        path: |
           installer_windows_inno_arm64_${{ inputs.version }}.exe
