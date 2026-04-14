@@ -81,4 +81,5 @@ jobs:
     - name: Upload Binary
       uses: actions/upload-artifact@v7
       with:
+        name: ${{ steps.build_binary.outputs.filename }}
         path: v2raya_binaries/${{ steps.build_binary.outputs.filename }}
