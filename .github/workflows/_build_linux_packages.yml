@@ -121,5 +121,8 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v7
       with:
+        if-no-files-found: ignore
         path: |
-          fpm_packages/*
+          fpm_packages/installer_archlinux_${{ steps.get_filename.outputs.FRIENDLY_ARCH }}_${{ inputs.version }}.pkg.tar.zst
+          fpm_packages/installer_redhat_${{ steps.get_filename.outputs.FRIENDLY_ARCH }}_${{ inputs.version }}.rpm
+          fpm_packages/installer_debian_${{ steps.get_filename.outputs.FRIENDLY_ARCH }}_${{ inputs.version }}.deb
