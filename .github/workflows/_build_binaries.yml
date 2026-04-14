@@ -61,6 +61,8 @@ jobs:
           service/go.sum
         go-version: '1.24'
     - name: Build v2rayA Binary
+      id: build_binary
+      shell: bash
       run: |
         mkdir -p v2raya_binaries
         key="${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}"
@@ -75,7 +77,8 @@ jobs:
           -o ../v2raya_binaries/v2raya_${filename}_${{ inputs.version }}${ext} \
           -ldflags="-X github.com/v2rayA/v2rayA/conf.Version=${{ inputs.version }} -s -w" \
           -trimpath
+        echo "filename=v2raya_${filename}_${{ inputs.version }}${ext}" >> ${GITHUB_OUTPUT}
     - name: Upload Binary
       uses: actions/upload-artifact@v7
       with:
-        path: v2raya_binaries/v2raya_${filename}_${{ inputs.version }}${ext}
+        path: v2raya_binaries/${{ steps.build_binary.outputs.filename }}
