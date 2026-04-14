@@ -21,7 +21,7 @@ jobs:
       with:
         fetch-depth: 0
     - name: Download Web Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: web
         path: service/server/router/web
@@ -99,7 +99,7 @@ jobs:
           Set-Location -Path ..
         }
     - name: Upload Artifact
-      uses: nanoufo/action-upload-artifacts-and-release-assets@v2
+      uses: actions/upload-artifact@v7
       with:
         path: |
           v2raya_binaries/*

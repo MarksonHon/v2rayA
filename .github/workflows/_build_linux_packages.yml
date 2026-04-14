@@ -43,12 +43,12 @@ jobs:
         Write-Output "FRIENDLY_ARCH=$friendly_arch" >> ${env:GITHUB_OUTPUT}
         Write-Output "FRIENDLY_ARCH=$friendly_arch" >> ${env:GITHUB_ENV}
     - name: Download Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: v2raya_${{ steps.get_filename.outputs.BUILD_NAME }}_${{ inputs.version }}
         path: build/
     - name: Download x64 Linux Build
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: v2raya_linux_x64_${{ inputs.version }}
         path: test/
@@ -119,7 +119,7 @@ jobs:
         mv installer_linux_$GOARCH$GOAMD64$GOARM_${{ inputs.version }}.deb \
            fpm_packages/installer_debian_${{ steps.get_filename.outputs.FRIENDLY_ARCH }}_${{ inputs.version }}.deb
     - name: Upload Artifact
-      uses: nanoufo/action-upload-artifacts-and-release-assets@v2
+      uses: actions/upload-artifact@v7
       with:
         path: |
           fpm_packages/*

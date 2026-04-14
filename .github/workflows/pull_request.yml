@@ -22,7 +22,7 @@ jobs:
       with:
         fetch-depth: 0
     - name: Download Artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: web
         path: service/server/router/web
@@ -56,6 +56,6 @@ jobs:
           GOARCH="$arch" CGO_ENABLED=0 go build -tags "tinytun" -ldflags "-X github.com/v2rayA/v2rayA/conf.Version=$version -s -w" -o "$CurrentDir"/v2raya_bin/v2raya_pr_build_"$os"_"$arch"_"$version""$win_ex_name"
         done
     - name: Upload Zip File to Artifacts
-      uses: nanoufo/action-upload-artifacts-and-release-assets@v2
+      uses: actions/upload-artifact@v7
       with:
         path: v2raya_bin/*
