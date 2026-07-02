@@ -76,14 +76,8 @@ const
   EnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
 
   ProxiFyreDepURL_WinpkFilter = 'https://github.com/wiresock/ndisapi/releases';
-  ProxiFyreDepURL_VCRedist_x64 = 'https://aka.ms/vc14/vc_redist.x64.exe';
-  ProxiFyreDepURL_VCRedist_arm64 = 'https://aka.ms/vc14/vc_redist.arm64.exe';
+  ProxiFyreDepURL_VCRedist = 'https://aka.ms/vc14/vc_redist.x64.exe';
   ProxiFyreDepURL_ProxiFyre = 'https://github.com/wiresock/proxifyre';
-
-function IsArm64: Boolean;
-begin
-  Result := IsArchitectureSelected(archARM64);
-end;
 
 function NeedsAddPath(Param: string): boolean;
 var
@@ -186,21 +180,15 @@ end;
 
 procedure ShowProxiFyreReminders();
 var
-  VCRedistURL: string;
   FirewallCmd: string;
   ResultCode: Integer;
 begin
-  if IsArm64 then
-    VCRedistURL := ProxiFyreDepURL_VCRedist_arm64
-  else
-    VCRedistURL := ProxiFyreDepURL_VCRedist_x64;
-
   if MsgBox('ProxiFyre NDIS transparent proxy has been bundled with v2rayA.' #13#10#13#10 +
     'To use it, the following dependencies are required:' #13#10#13#10 +
     '1) Windows Packet Filter (WinpkFilter) driver' #13#10 +
     '   ' + ProxiFyreDepURL_WinpkFilter #13#10#13#10 +
-    '2) Visual C++ Redistributable' #13#10 +
-    '   ' + VCRedistURL #13#10#13#10 +
+    '2) Visual C++ Redistributable (x64 or ARM64):' #13#10 +
+    '   ' + ProxiFyreDepURL_VCRedist #13#10#13#10 +
     'Open the WinpkFilter download page now?',
     mbConfirmation, MB_YESNO) = IDYES then
   begin
@@ -209,11 +197,12 @@ begin
   end;
 
   if MsgBox('Open the Visual C++ Redistributable download page?' #13#10#13#10 +
-    'Choose the correct version for your system:' #13#10 +
-    '  ' + VCRedistURL,
+    'Download the version matching your system architecture:' #13#10 +
+    '  x64:   https://aka.ms/vc14/vc_redist.x64.exe' #13#10 +
+    '  ARM64: https://aka.ms/vc14/vc_redist.arm64.exe',
     mbConfirmation, MB_YESNO) = IDYES then
   begin
-    Exec('rundll32.exe', 'url.dll,FileProtocolHandler ' + VCRedistURL,
+    Exec('rundll32.exe', 'url.dll,FileProtocolHandler https://aka.ms/vc14/vc_redist.x64.exe',
       '', SW_SHOW, ewNoWait, ResultCode);
   end;
 
