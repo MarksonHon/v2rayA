@@ -88,6 +88,7 @@ nft delete table inet v2raya 2>/dev/null || true
 
 func deleteTransparentProxyRulesKeepSystemProxy() {
 	stopTinyTun()
+	stopProxifyre()
 	iptables.CloseWatcher()
 	if !conf.GetEnvironmentConfig().Lite {
 		removeResolvHijacker()
@@ -128,6 +129,8 @@ func writeTransparentProxyRules(tmpl *Template) (err error) {
 	switch setting.TransparentType {
 	case configure.TransparentTun:
 		return startTinyTun(tmpl)
+	case configure.TransparentProxifyre:
+		return startProxifyre(tmpl)
 	case configure.TransparentTproxy:
 		if err = iptables.Tproxy.GetSetupCommands().Run(true); err != nil {
 			if strings.Contains(err.Error(), "TPROXY") && strings.Contains(err.Error(), "No chain") {

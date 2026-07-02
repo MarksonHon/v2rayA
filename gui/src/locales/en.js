@@ -66,7 +66,8 @@ export default {
     timeLastUpdate: "Datetime of Last Update",
     numberServers: "Number of Servers",
     subscription: "Subscription",
-    autoSelect: "Automatically connect to new servers from the subscription after an automatic update of the subscription",
+    autoSelect:
+      "Automatically connect to new servers from the subscription after an automatic update of the subscription",
   },
   operations: {
     name: "Operations",
@@ -144,6 +145,7 @@ export default {
     inboundSniffing: "Sniffing",
     tunProcessBackend: "Process Exclusion Backend",
     tunExcludeProcesses: "TinyTun Excluded Processes",
+    proxifyreExcludeProcesses: "ProxiFyre Excluded Processes",
     ssBackend: "Shadowsocks Backend",
     trojanBackend: "Trojan Backend",
     nodeBackend: "Backend",
@@ -178,7 +180,8 @@ export default {
       backendSystemDefault: "System Default",
     },
     messages: {
-      inboundSniffing: "Sniff inbound traffic. If it is not turned on, some traffic may not be diverted correctly.",
+      inboundSniffing:
+        "Sniff inbound traffic. If it is not turned on, some traffic may not be diverted correctly.",
       gfwlist:
         "Based on modified time of file which sometimes is after latest version online.",
       transparentProxy:
@@ -189,9 +192,13 @@ export default {
         "Set the network interface prefixes that should not pass through the transparent proxy. Wildcard * is supported (automatically converted to + in iptables mode). For example: docker*, veth*, wg*, ppp*, br-*. Use commas to separate multiple prefixes.",
       tunAutoRoute:
         "When enabled, TinyTun automatically configures system routes. When disabled, you must provide custom setup/teardown scripts to configure routing yourself.",
-      tunBypassInterfaces: "Select interfaces to exclude from TUN proxying, or enter custom glob patterns below.",
-      tunProcessBackend: "Choose TinyTun's process exclusion method on Linux. TUN mode uses /proc scanning for broad compatibility; eBPF mode uses cgroupv2 hooks for more accurate process-level exclusion, requiring tinytun-ebpf.o at /usr/lib/tinytun/.",
-      tunExcludeProcesses: "Configure additional process names to bypass TinyTun. One name per line is recommended, e.g. chrome.exe or firefox.",
+      tunBypassInterfaces:
+        "Select interfaces to exclude from TUN proxying, or enter custom glob patterns below.",
+      tunProcessBackend:
+        "Choose TinyTun's process exclusion method on Linux. TUN mode uses /proc scanning for broad compatibility; eBPF mode uses cgroupv2 hooks for more accurate process-level exclusion, requiring tinytun-ebpf.o at /usr/lib/tinytun/.",
+      tunExcludeProcesses:
+        	tunExcludeProcesses: "Configure additional process names to bypass TinyTun. One name per line is recommended, e.g. chrome.exe or firefox.",
+        	proxifyreExcludeProcesses: "Process names or absolute paths to bypass the ProxiFyre proxy, separated by commas. v2rayA, v2raya_core, and ProxiFyre.exe are always excluded automatically by absolute path.",
       pacMode: `Here you can set the splitting traffic rule of the rule port. By default, "Rule of Splitting Traffic" port is 20172 and HTTP protocol.`,
       preventDnsSpoofing: "",
       tcpFastOpen:
@@ -268,7 +275,8 @@ export default {
     colDomains: "Domain List",
     colOutbound: "Outbound",
     serverPlaceholder: "e.g. 8.8.8.8 or https://dns.google/dns-query",
-    domainsPlaceholder: "One per line, e.g. geosite:cn\nLeave empty for fallback DNS",
+    domainsPlaceholder:
+      "One per line, e.g. geosite:cn\nLeave empty for fallback DNS",
     addRule: "Add Rule",
     resetDefault: "Reset to Defaults",
     errNoRules: "At least one DNS rule is required",
@@ -338,8 +346,7 @@ export default {
       "Be sure to <b>DELETE</b> those servers/subscriptions? It is not reversible.",
   },
   latency: {
-    message:
-      "Latency tests can take several minutes. Wait patiently please.",
+    message: "Latency tests can take several minutes. Wait patiently please.",
   },
   version: {
     higherVersionNeeded:
@@ -378,8 +385,10 @@ export default {
   },
   routingA: {
     messages: ["click the button 'Help&Manual' for help"],
-    inboundDeprecated: "Defining inbounds in RoutingA is deprecated. The generated JSON config will NOT include those inbound ports. Please use the custom inbound settings with RoutingA rules instead.",
-    inboundDeprecatedConfirm: "This RoutingA configuration contains deprecated inbound definitions. The generated config will not include those inbound ports. Continue saving?",
+    inboundDeprecated:
+      "Defining inbounds in RoutingA is deprecated. The generated JSON config will NOT include those inbound ports. Please use the custom inbound settings with RoutingA rules instead.",
+    inboundDeprecatedConfirm:
+      "This RoutingA configuration contains deprecated inbound definitions. The generated config will not include those inbound ports. Continue saving?",
   },
   outbound: {
     addMessage: "Please input the proxy group name you want to add:",
@@ -417,51 +426,55 @@ export default {
     title: "White IP Groups",
     messages: [
       "The selected IP group will bypass the XRay/V2Ray core and go directly outbound (through Nftables/Iptables). Please ensure your DNS server is reliable and free of contamination so that clients can resolve the correct IPs.",
-      "It's best to use this feature when your system is using Nftables, as iptables may experience performance issues when adding a large number of IPs."
+      "It's best to use this feature when your system is using Nftables, as iptables may experience performance issues when adding a large number of IPs.",
     ],
     formName1: "Hold down Ctrl to select multiple items.",
     formName2: "Custom IPs (one per line, standard CIDR format)",
     formPlaceholder2: "172.30.0.0/16\nfd00:aaaa:bbbb::/48",
-    invalidCustomIps:"Invalid Custom IPs",
-    cn: 'China Mainland',
-    private: 'Private',
-    us: 'United States',
-    cloudflare: 'Cloudflare',
+    invalidCustomIps: "Invalid Custom IPs",
+    cn: "China Mainland",
+    private: "Private",
+    us: "United States",
+    cloudflare: "Cloudflare",
   },
   domainsExcluded: {
     title: "Domains Excluded",
     messages: [
-      "A list of domain names. If the traffic sniffing result matches a domain name in this list, the target address will not be reset."
+      "A list of domain names. If the traffic sniffing result matches a domain name in this list, the target address will not be reset.",
     ],
     formName: "Domains Excluded List",
-    formPlaceholder: "courier.push.apple.com\nMijia Cloud\ndlg.io.mi.com"
+    formPlaceholder: "courier.push.apple.com\nMijia Cloud\ndlg.io.mi.com",
   },
   gfwList: {
     title: "Update GFWList",
     messages: [
       "If accessing GitHub is difficult in your current environment, you can download the latest GFWList（geosite.dat）from GitHub（https://github.com/v2rayA/dist-v2ray-rules-dat）, upload it to your server, and then enter your server address here to download it.",
       "If the input form is empty it will automatically download from Github, otherwise it will download using the custom link",
-      "Please note: Wrong file may cause service startup failure. If the service cannot be started after downloading, you can click the Delete GFWList button"
+      "Please note: Wrong file may cause service startup failure. If the service cannot be started after downloading, you can click the Delete GFWList button",
     ],
     formName: "Custom Download Link",
-    wrongCustomLink: "wrong custom download link"
+    wrongCustomLink: "wrong custom download link",
   },
   tinytun: {
     routeScript: {
       title: "TinyTun Custom Route Script",
-      warning: "Warning: Incorrect scripts may break your network or system routing. Make sure you know what you are doing before saving.",
+      warning:
+        "Warning: Incorrect scripts may break your network or system routing. Make sure you know what you are doing before saving.",
       shellType: "Shell Type",
       customShell: "Custom (specify path below)",
       shellPath: "Shell Path",
       shellPathPlaceholder: "/usr/bin/bash",
       setupScript: "Setup Script (runs after TinyTun starts)",
-      setupScriptPlaceholder: "# Script to configure routes when TinyTun starts\n# e.g. ip route add default dev tun0",
+      setupScriptPlaceholder:
+        "# Script to configure routes when TinyTun starts\n# e.g. ip route add default dev tun0",
       teardownScript: "Teardown Script (runs before TinyTun stops)",
-      teardownScriptPlaceholder: "# Script to remove routes when TinyTun stops\n# e.g. ip route del default dev tun0",
+      teardownScriptPlaceholder:
+        "# Script to remove routes when TinyTun stops\n# e.g. ip route del default dev tun0",
     },
     processExclude: {
       title: "TinyTun Custom Process Exclusion",
-      warning: "Warning: incorrect process names may bypass traffic unexpectedly. Add only trusted process names.",
+      warning:
+        "Warning: incorrect process names may bypass traffic unexpectedly. Add only trusted process names.",
       listLabel: "Excluded Process Names",
       placeholder: "v2raya\nv2ray\nchrome.exe",
       hint: "Supports comma or newline separators. Values are deduplicated when saved.",

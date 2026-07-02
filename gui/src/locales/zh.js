@@ -143,6 +143,7 @@ export default {
     concurrency: "最大并发数",
     tunProcessBackend: "TinyTun 进程排除方式",
     tunExcludeProcesses: "TinyTun 自定义排除进程",
+    proxifyreExcludeProcesses: "ProxiFyre 自定义排除进程",
     ssBackend: "Shadowsocks 后端",
     trojanBackend: "Trojan 后端",
     nodeBackend: "后端",
@@ -187,9 +188,14 @@ export default {
         "设置不经过透明代理的网卡前缀。支持通配符 * (iptables模式下会自动转换为 +)。例如: docker*, veth*, wg*, ppp*, br-*。多个前缀用逗号隔开。",
       tunAutoRoute:
         "开启时，TinyTun 自动配置系统路由。关闭时，需要提供自定义的启动/停止脚本手动配置路由。",
-      tunBypassInterfaces: "勾选不走 TUN 代理的网卡，或在下方输入自定义通配符。",
-      tunProcessBackend: "Linux 下选择 TinyTun 的进程排除实现。TUN 模式使用 /proc 查找，兼容性强；eBPF 模式通过 cgroupv2 钉子实现更准确的进程级排除，需安装 tinytun-ebpf.o（/usr/lib/tinytun/）。",
-      tunExcludeProcesses: "配置额外需要直通的进程名。建议一行一个，例如：chrome.exe、firefox。",
+      tunBypassInterfaces:
+        "勾选不走 TUN 代理的网卡，或在下方输入自定义通配符。",
+      tunProcessBackend:
+        "Linux 下选择 TinyTun 的进程排除实现。TUN 模式使用 /proc 查找，兼容性强；eBPF 模式通过 cgroupv2 钉子实现更准确的进程级排除，需安装 tinytun-ebpf.o（/usr/lib/tinytun/）。",
+      tunExcludeProcesses:
+        "配置额外需要直通的进程名。建议一行一个，例如：chrome.exe、firefox。",
+      proxifyreExcludeProcesses:
+        "需要绕过 ProxiFyre 代理的进程名或绝对路径，用逗号隔开。v2rayA、v2raya_core 和 ProxiFyre.exe 已被绝对路径自动排除。",
       pacMode:
         "该选项设置规则分流端口所使用的路由模式。默认情况下规则分流端口为20172，HTTP协议。",
       preventDnsSpoofing: "",
@@ -370,8 +376,10 @@ export default {
   },
   routingA: {
     messages: ["点击“查看帮助”按钮以获取帮助"],
-    inboundDeprecated: "RoutingA 中定义入站(inbound)的功能已弃用，生成的 JSON 配置将不会包含对应的入站端口。请使用自定义入站设置中的 RoutingA 规则功能替代。",
-    inboundDeprecatedConfirm: "当前 RoutingA 配置包含已弃用的入站定义，生成的配置将不会包含这些入站端口。是否继续保存？",
+    inboundDeprecated:
+      "RoutingA 中定义入站(inbound)的功能已弃用，生成的 JSON 配置将不会包含对应的入站端口。请使用自定义入站设置中的 RoutingA 规则功能替代。",
+    inboundDeprecatedConfirm:
+      "当前 RoutingA 配置包含已弃用的入站定义，生成的配置将不会包含这些入站端口。是否继续保存？",
   },
   outbound: {
     addMessage: "请输入你想要添加的代理分组名称：",
@@ -415,56 +423,60 @@ export default {
       all: "全部",
     },
   },
-  
+
   tproxyWhiteIpGroups: {
     title: "直通白名单IP组",
     messages: [
       "选中的IP组将会不经过XRay/V2Ray核心直接出站（通过Nftables/Iptables直接转发），请确保你的DNS服务器足够可靠无污染能使客户端能解析到正确的IP",
-      "最好系统使用Nftables时使用此功能，Iptables可能在添加大量IP时存在性能问题"
+      "最好系统使用Nftables时使用此功能，Iptables可能在添加大量IP时存在性能问题",
     ],
     formName1: "按住Ctrl可以多选",
     formName2: "自定义IP（一行一个，标准CIDR格式）",
     formPlaceholder2: "172.30.0.0/16\nfd00:dead:beef::/48",
-    invalidCustomIps:"自定义IP格式错误",
-    cn: '中国大陆',
-    private: '私网网段',
-    us: '美国',
-    cloudflare: 'Cloudflare',
+    invalidCustomIps: "自定义IP格式错误",
+    cn: "中国大陆",
+    private: "私网网段",
+    us: "美国",
+    cloudflare: "Cloudflare",
   },
   domainsExcluded: {
     title: "排除域名",
     messages: [
-      "一个域名列表，如果流量探测结果在这个列表中时，将 不会 重置目标地址。"
+      "一个域名列表，如果流量探测结果在这个列表中时，将 不会 重置目标地址。",
     ],
     formName: "排除域名列表",
-    formPlaceholder: "courier.push.apple.com\nMijia Cloud\ndlg.io.mi.com"
+    formPlaceholder: "courier.push.apple.com\nMijia Cloud\ndlg.io.mi.com",
   },
   gfwList: {
     title: "更新GFWList",
     messages: [
       "如果当前环境访问Github困难，你可以从此处（https://github.com/v2rayA/dist-v2ray-rules-dat）手动下载最新GFWList（geosite.dat），上传到你的服务器，然后填写你的服务器链接进行下载",
       "如果不填写自定义下载链接输入框则自动从Github进行下载",
-      "注意：错误的文件可能导致服务启动失败，如果更新后服务器启动失败，你可以点击删除按钮删除下载的GFWList"
+      "注意：错误的文件可能导致服务启动失败，如果更新后服务器启动失败，你可以点击删除按钮删除下载的GFWList",
     ],
     formName: "自定义下载链接",
-    wrongCustomLink: "错误的自定义下载链接"
+    wrongCustomLink: "错误的自定义下载链接",
   },
   tinytun: {
     routeScript: {
       title: "TinyTun 自定义路由脚本",
-      warning: "警告：错误的脚本可能会破坏您的网络或系统路由。请确保您清楚自己正在做什么再保存。",
+      warning:
+        "警告：错误的脚本可能会破坏您的网络或系统路由。请确保您清楚自己正在做什么再保存。",
       shellType: "Shell 类型",
       customShell: "自定义（在下方指定路径）",
       shellPath: "Shell 路径",
       shellPathPlaceholder: "/usr/bin/bash",
       setupScript: "启动脚本（TinyTun 启动后执行）",
-      setupScriptPlaceholder: "# TinyTun 启动时配置路由的脚本\n# 例如: ip route add default dev tun0",
+      setupScriptPlaceholder:
+        "# TinyTun 启动时配置路由的脚本\n# 例如: ip route add default dev tun0",
       teardownScript: "停止脚本（TinyTun 停止前执行）",
-      teardownScriptPlaceholder: "# TinyTun 停止时移除路由的脚本\n# 例如: ip route del default dev tun0",
+      teardownScriptPlaceholder:
+        "# TinyTun 停止时移除路由的脚本\n# 例如: ip route del default dev tun0",
     },
     processExclude: {
       title: "TinyTun 自定义进程排除",
-      warning: "警告：错误的进程名可能导致流量被意外直通。请仅添加你确认需要排除的进程。",
+      warning:
+        "警告：错误的进程名可能导致流量被意外直通。请仅添加你确认需要排除的进程。",
       listLabel: "排除进程名称",
       placeholder: "v2raya\nv2ray\nchrome.exe",
       hint: "支持逗号或换行分隔。保存时会自动去重。",

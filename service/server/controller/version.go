@@ -34,18 +34,19 @@ func GetVersion(ctx *gin.Context) {
 	versionErr := service.CheckCoreVersionMatch()
 
 	common.ResponseSuccess(ctx, gin.H{
-		"version":          conf.Version,
-		"foundNew":         conf.FoundNew,
-		"remoteVersion":    conf.RemoteVersion,
-		"serviceValid":     service.IsV2rayServiceValid(),
-		"v5":               versionErr == nil,
-		"lite":             lite,
-		"loadBalanceValid": true,
-		"variant":          where.V2rayaCore,
-		"os":               runtime.GOOS,
-		"isRoot":           isRoot,
-		"tinytunSupported": v2ray.IsTinyTunEnabled(),
-		"coreVersionValid": versionErr == nil,
+		"version":            conf.Version,
+		"foundNew":           conf.FoundNew,
+		"remoteVersion":      conf.RemoteVersion,
+		"serviceValid":       service.IsV2rayServiceValid(),
+		"v5":                 versionErr == nil,
+		"lite":               lite,
+		"loadBalanceValid":   true,
+		"variant":            where.V2rayaCore,
+		"os":                 runtime.GOOS,
+		"isRoot":             isRoot,
+		"tinytunSupported":   v2ray.IsTinyTunEnabled(),
+		"proxifyreSupported": v2ray.IsProxifyreEnabled(),
+		"coreVersionValid":   versionErr == nil,
 		"coreVersionErr": func() string {
 			if versionErr != nil {
 				return versionErr.Error()

@@ -32,6 +32,7 @@ type Setting struct {
 	TunTeardownScript                  string          `json:"tunTeardownScript"`
 	TunProcessBackend                  string          `json:"tunProcessBackend"`
 	TunExcludeProcesses                string          `json:"tunExcludeProcesses"`
+	ProxifyreExcludeProcesses          string          `json:"proxifyreExcludeProcesses"`
 	SsBackend                          string          `json:"ssBackend"`
 	TrojanBackend                      string          `json:"trojanBackend"`
 	// 新 DNS 模块监听配置

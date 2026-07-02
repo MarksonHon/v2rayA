@@ -66,6 +66,9 @@
           <option v-show="!lite" value="tun" :disabled="!tinytunSupported">
             tun (TinyTun){{ !tinytunSupported ? ' — ' + $t("setting.options.notIntegrated") : '' }}
           </option>
+          <option v-show="os === 'windows'" value="proxifyre">
+            ProxiFyre Proxifier
+          </option>
           <option v-show="!(isRoot && (os === 'linux' || os === 'darwin'))" value="system_proxy">system proxy</option>
         </b-select>
 
@@ -186,6 +189,19 @@
             color: rgba(0, 0, 0, 0.75);
           " outlined @click="handleClickTunExcludeProcesses">{{ $t("operations.configure") }}
         </b-button>
+      </b-field>
+
+      <b-field v-show="transparent !== 'close' && transparentType === 'proxifyre'"
+        label-position="on-border">
+        <template slot="label">
+          {{ $t("setting.proxifyreExcludeProcesses") }}
+          <b-tooltip type="is-dark" multilined :label="$t('setting.messages.proxifyreExcludeProcesses')" position="is-right">
+            <b-icon size="is-small" icon=" iconfont icon-help-circle-outline"
+              style="position: relative; top: 2px; right: 3px; font-weight: normal" />
+          </b-tooltip>
+        </template>
+        <b-input v-model="proxifyreExcludeProcesses" expanded
+          placeholder="chrome.exe, firefox.exe, C:\\Program Files\\SomeApp\\app.exe" />
       </b-field>
 
       <b-field label-position="on-border">
@@ -406,7 +422,8 @@ export default {
     tunSetupScript: "",
     tunTeardownScript: "",
     tunProcessBackend: "",
-    tunExcludeProcesses: "",
+    	tunExcludeProcesses: "",
+    	proxifyreExcludeProcesses: "",
     pacAutoUpdateMode: "none",
     pacAutoUpdateIntervalHour: 0,
     subscriptionAutoUpdateMode: "none",
@@ -563,7 +580,8 @@ export default {
             tunSetupScript: this.tunSetupScript,
             tunTeardownScript: this.tunTeardownScript,
             tunProcessBackend: this.tunProcessBackend,
-            tunExcludeProcesses: this.tunExcludeProcesses,
+            	tunExcludeProcesses: this.tunExcludeProcesses,
+            	proxifyreExcludeProcesses: this.proxifyreExcludeProcesses,
           },
           cancelToken: new axios.CancelToken(function executor(c) {
             cancel = c;

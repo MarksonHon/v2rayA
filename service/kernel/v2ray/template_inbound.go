@@ -276,6 +276,18 @@ func (t *Template) setInbound(setting *configure.Setting) error {
 			// TinyTun v0.0.2+ handles DNS routing natively via its own DNS groups.
 			// The former dns-in-tun dokodemo-door (127.0.0.1:6053) is no longer needed;
 			// v2ray acts as a pure SOCKS5 forwarder for non-DNS traffic.
+		case configure.TransparentProxifyre:
+			t.Inbounds = append(t.Inbounds, coreObj.Inbound{
+				Port:     proxifyreSocksPort,
+				Protocol: "socks",
+				Listen:   "127.0.0.1",
+				Settings: &coreObj.InboundSettings{
+					UDP: true,
+				},
+				Tag: "transparent",
+			})
+			// ProxiFyre handles traffic capture at the NDIS layer and forwards
+			// to this SOCKS5 inbound. v2ray acts as a pure SOCKS5 forwarder.
 		}
 
 	}
