@@ -45,6 +45,7 @@ Source: "D:\v2raya-TheRealArch-windows\bin\{#MyAppExeName}"; DestDir: "{app}\bin
 Source: "D:\v2raya-TheRealArch-windows\bin\*"; DestDir: "{app}\bin"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "D:\v2raya-TheRealArch-windows\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "D:\v2raya.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "D:\v2raya-TheRealArch-windows\bin\ProxiFyre.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
@@ -74,6 +75,16 @@ Type: filesandordirs; Name: "{app}\bin\v2raya.log"
 const
   EnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
 
+  ProxiFyreDepURL_WinpkFilter = 'https://github.com/wiresock/ndisapi/releases';
+  ProxiFyreDepURL_VCRedist_x64 = 'https://aka.ms/vc14/vc_redist.x64.exe';
+  ProxiFyreDepURL_VCRedist_arm64 = 'https://aka.ms/vc14/vc_redist.arm64.exe';
+  ProxiFyreDepURL_ProxiFyre = 'https://github.com/wiresock/proxifyre';
+
+function IsArm64: Boolean;
+begin
+  Result := IsArchitectureSelected(archARM64);
+end;
+
 function NeedsAddPath(Param: string): boolean;
 var
   OrigPath: string;
@@ -85,9 +96,9 @@ begin
     Result := True;
     exit;
   end;
-  Result := Pos(';' + Uppercase(BinPath) + ';', ';' + Uppercase(OrigPath) + ';') = 0;  
+  Result := Pos(';' + Uppercase(BinPath) + ';', ';' + Uppercase(OrigPath) + ';') = 0;
   if Result = True then
-    Result := Pos(';' + Uppercase(BinPath) + '\;', ';' + Uppercase(OrigPath) + ';') = 0; 
+    Result := Pos(';' + Uppercase(BinPath) + '\;', ';' + Uppercase(OrigPath) + ';') = 0;
 end;
 
 procedure AddBinToPath();
@@ -108,7 +119,7 @@ begin
     else
       NewPath := OrigPath;
   end;
-  
+
   if NewPath <> OrigPath then
     RegWriteStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', NewPath);
 end;
@@ -124,19 +135,19 @@ begin
   BinPath := ExpandConstant('{app}\bin');
   if not RegQueryStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', OrigPath) then
     exit;
-    
+
   PathList := TStringList.Create;
   try
     PathList.Delimiter := ';';
     PathList.StrictDelimiter := True;
     PathList.DelimitedText := OrigPath;
-    
+
     for I := PathList.Count - 1 downto 0 do
     begin
       if Uppercase(PathList[I]) = Uppercase(BinPath) then
         PathList.Delete(I);
     end;
-    
+
     NewPath := PathList.DelimitedText;
     if NewPath <> OrigPath then
       RegWriteStringValue(HKEY_LOCAL_MACHINE, EnvironmentKey, 'Path', NewPath);
@@ -151,7 +162,7 @@ var
   EnvContent: TStringList;
 begin
   EnvFilePath := ExpandConstant('{app}\v2rayA_env.txt');
-  
+
   // 仅在文件不存在时创建
   if not FileExists(EnvFilePath) then
   begin
@@ -173,6 +184,52 @@ begin
   Exec(ExpandConstant('{sys}\sc.exe'), 'start v2rayA', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
+procedure ShowProxiFyreReminders();
+var
+  VCRedistURL: string;
+  FirewallCmd: string;
+  ResultCode: Integer;
+begin
+  if IsArm64 then
+    VCRedistURL := ProxiFyreDepURL_VCRedist_arm64
+  else
+    VCRedistURL := ProxiFyreDepURL_VCRedist_x64;
+
+  if MsgBox('ProxiFyre NDIS transparent proxy has been bundled with v2rayA.' #13#10#13#10 +
+    'To use it, the following dependencies are required:' #13#10#13#10 +
+    '1) Windows Packet Filter (WinpkFilter) driver' #13#10 +
+    '   ' + ProxiFyreDepURL_WinpkFilter #13#10#13#10 +
+    '2) Visual C++ Redistributable' #13#10 +
+    '   ' + VCRedistURL #13#10#13#10 +
+    'Open the WinpkFilter download page now?',
+    mbConfirmation, MB_YESNO) = IDYES then
+  begin
+    Exec('rundll32.exe', 'url.dll,FileProtocolHandler ' + ProxiFyreDepURL_WinpkFilter,
+      '', SW_SHOW, ewNoWait, ResultCode);
+  end;
+
+  if MsgBox('Open the Visual C++ Redistributable download page?' #13#10#13#10 +
+    'Choose the correct version for your system:' #13#10 +
+    '  ' + VCRedistURL,
+    mbConfirmation, MB_YESNO) = IDYES then
+  begin
+    Exec('rundll32.exe', 'url.dll,FileProtocolHandler ' + VCRedistURL,
+      '', SW_SHOW, ewNoWait, ResultCode);
+  end;
+
+  FirewallCmd := ExpandConstant('{app}\bin\ProxiFyre.exe');
+  MsgBox('IMPORTANT: If you plan to use ProxiFyre transparent proxy,' #13#10#13#10 +
+    'please allow ProxiFyre.exe through Windows Firewall.' #13#10#13#10 +
+    'You can configure this in:' #13#10 +
+    '  Windows Defender Firewall -> Allow an app through firewall' #13#10#13#10 +
+    'Or run as Administrator:' #13#10 +
+    '  netsh advfirewall firewall add rule name="ProxiFyre" dir=in action=allow' #13#10 +
+    '    program="' + FirewallCmd + '" enable=yes' #13#10#13#10 +
+    '  netsh advfirewall firewall add rule name="ProxiFyre" dir=out action=allow' #13#10 +
+    '    program="' + FirewallCmd + '" enable=yes',
+    mbInformation, MB_OK);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
@@ -181,6 +238,8 @@ begin
     AddBinToPath();
     // PATH 修改完成后再启动服务
     StartService();
+    // 显示 ProxiFyre 依赖和防火墙提示
+    ShowProxiFyreReminders();
   end;
 end;
 
@@ -193,7 +252,7 @@ begin
 end;
 
 function InitializeSetup() : Boolean;
-var 
+var
   ResultCode: Integer;
 begin
   Result := True;

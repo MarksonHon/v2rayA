@@ -40,6 +40,19 @@ jobs:
           } else {
             Write-Host "SHA256 hash verified for TinyTun x64."
           }
+      - name: Download ProxiFyre x64
+        shell: pwsh
+        run: |
+          $Url_ProxiFyre_x64 = "https://github.com/wiresock/proxifyre/releases/download/v2.2.1/ProxiFyre-v2.2.1-x64-signed.zip"
+          $sha256_ProxiFyre_x64 = "c38ca1caa68cd730712f5c0911e4240711bf9e7684988ae64ed04ec693cce899"
+          Invoke-WebRequest $Url_ProxiFyre_x64 -OutFile "D:\proxifyre-x64.zip"
+          $hash_ProxiFyre_x64 = Get-FileHash -Path "D:\proxifyre-x64.zip" -Algorithm SHA256
+          if ($hash_ProxiFyre_x64.Hash -ne $sha256_ProxiFyre_x64) {
+            throw "SHA256 hash mismatch for ProxiFyre x64. Expected: $sha256_ProxiFyre_x64, Actual: $($hash_ProxiFyre_x64.Hash)"
+            exit 1
+          } else {
+            Write-Host "SHA256 hash verified for ProxiFyre x64."
+          }
       - name: Download Artifact Windows arm64
         uses: actions/download-artifact@v8
         with:
@@ -62,6 +75,19 @@ jobs:
             exit 1
           } else {
             Write-Host "SHA256 hash verified for TinyTun arm64."
+          }
+      - name: Download ProxiFyre arm64
+        shell: pwsh
+        run: |
+          $Url_ProxiFyre_arm64 = "https://github.com/wiresock/proxifyre/releases/download/v2.2.1/ProxiFyre-v2.2.1-ARM64-signed.zip"
+          $sha256_ProxiFyre_arm64 = "c68f2134879d426d6cc783a517dd5f37dbdd1860e33414e26aed587724882471"
+          Invoke-WebRequest $Url_ProxiFyre_arm64 -OutFile "D:\proxifyre-arm64.zip"
+          $hash_ProxiFyre_arm64 = Get-FileHash -Path "D:\proxifyre-arm64.zip" -Algorithm SHA256
+          if ($hash_ProxiFyre_arm64.Hash -ne $sha256_ProxiFyre_arm64) {
+            throw "SHA256 hash mismatch for ProxiFyre arm64. Expected: $sha256_ProxiFyre_arm64, Actual: $($hash_ProxiFyre_arm64.Hash)"
+            exit 1
+          } else {
+            Write-Host "SHA256 hash verified for ProxiFyre arm64."
           }
       - name: Install Inno Setup
         shell: pwsh
@@ -89,6 +115,11 @@ jobs:
           Expand-Archive -Path "D:\tinytun-arm64.zip" -DestinationPath "D:\tinytun-arm64"
           Move-Item -Path "D:\tinytun-arm64\tinytun-aarch64-pc-windows-gnullvm.exe" -Destination "D:\v2raya-arm64-windows\bin\tinytun.exe"
           Move-Item -Path "D:\tinytun-arm64\wintun.dll" -Destination "D:\v2raya-arm64-windows\bin\wintun.dll"
+          ## Extract ProxiFyre to Destination Directory
+          Expand-Archive -Path "D:\proxifyre-x64.zip" -DestinationPath "D:\proxifyre-x64"
+          Move-Item -Path "D:\proxifyre-x64\ProxiFyre.exe" -Destination "D:\v2raya-x64compatible-windows\bin\ProxiFyre.exe"
+          Expand-Archive -Path "D:\proxifyre-arm64.zip" -DestinationPath "D:\proxifyre-arm64"
+          Move-Item -Path "D:\proxifyre-arm64\ProxiFyre.exe" -Destination "D:\v2raya-arm64-windows\bin\ProxiFyre.exe"
           ## Download DAT files directly from Loyalsoldier release
           $DatBaseUrl = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
           $DatFiles = @("geoip.dat", "geosite.dat")
