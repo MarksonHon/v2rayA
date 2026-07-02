@@ -422,8 +422,8 @@ export default {
     tunSetupScript: "",
     tunTeardownScript: "",
     tunProcessBackend: "",
-    	tunExcludeProcesses: "",
-    	proxifyreExcludeProcesses: "",
+    tunExcludeProcesses: "",
+    proxifyreExcludeProcesses: "",
     pacAutoUpdateMode: "none",
     pacAutoUpdateIntervalHour: 0,
     subscriptionAutoUpdateMode: "none",
@@ -580,8 +580,8 @@ export default {
             tunSetupScript: this.tunSetupScript,
             tunTeardownScript: this.tunTeardownScript,
             tunProcessBackend: this.tunProcessBackend,
-            	tunExcludeProcesses: this.tunExcludeProcesses,
-            	proxifyreExcludeProcesses: this.proxifyreExcludeProcesses,
+            tunExcludeProcesses: this.tunExcludeProcesses,
+            proxifyreExcludeProcesses: this.proxifyreExcludeProcesses,
           },
           cancelToken: new axios.CancelToken(function executor(c) {
             cancel = c;

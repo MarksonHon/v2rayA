@@ -197,8 +197,9 @@ export default {
       tunProcessBackend:
         "Choose TinyTun's process exclusion method on Linux. TUN mode uses /proc scanning for broad compatibility; eBPF mode uses cgroupv2 hooks for more accurate process-level exclusion, requiring tinytun-ebpf.o at /usr/lib/tinytun/.",
       tunExcludeProcesses:
-        	tunExcludeProcesses: "Configure additional process names to bypass TinyTun. One name per line is recommended, e.g. chrome.exe or firefox.",
-        	proxifyreExcludeProcesses: "Process names or absolute paths to bypass the ProxiFyre proxy, separated by commas. v2rayA, v2raya_core, and ProxiFyre.exe are always excluded automatically by absolute path.",
+        "Configure additional process names to bypass TinyTun. One name per line is recommended, e.g. chrome.exe or firefox.",
+      proxifyreExcludeProcesses:
+        "Process names or absolute paths to bypass the ProxiFyre proxy, separated by commas. v2rayA, v2raya_core, and ProxiFyre.exe are always excluded automatically by absolute path.",
       pacMode: `Here you can set the splitting traffic rule of the rule port. By default, "Rule of Splitting Traffic" port is 20172 and HTTP protocol.`,
       preventDnsSpoofing: "",
       tcpFastOpen:
