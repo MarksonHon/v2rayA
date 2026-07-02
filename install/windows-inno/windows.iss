@@ -182,41 +182,44 @@ procedure ShowProxiFyreReminders();
 var
   FirewallCmd: string;
   ResultCode: Integer;
+  Msg1: string;
+  Msg2: string;
+  Msg3: string;
 begin
-  if MsgBox('ProxiFyre NDIS transparent proxy has been bundled with v2rayA.' #13#10#13#10 +
-    'To use it, the following dependencies are required:' #13#10#13#10 +
-    '1) Windows Packet Filter (WinpkFilter) driver' #13#10 +
-    '   ' + ProxiFyreDepURL_WinpkFilter #13#10#13#10 +
-    '2) Visual C++ Redistributable (x64 or ARM64):' #13#10 +
-    '   ' + ProxiFyreDepURL_VCRedist #13#10#13#10 +
-    'Open the WinpkFilter download page now?',
-    mbConfirmation, MB_YESNO) = IDYES then
+  Msg1 := 'ProxiFyre NDIS transparent proxy has been bundled with v2rayA.'#13#10#13#10
+    + 'To use it, the following dependencies are required:'#13#10#13#10
+    + '1) Windows Packet Filter (WinpkFilter) driver'#13#10
+    + '   ' + ProxiFyreDepURL_WinpkFilter + #13#10#13#10
+    + '2) Visual C++ Redistributable (x64 or ARM64):'#13#10
+    + '   ' + ProxiFyreDepURL_VCRedist#13#10#13#10
+    + 'Open the WinpkFilter download page now?';
+  if MsgBox(Msg1, mbConfirmation, MB_YESNO) = IDYES then
   begin
     Exec('rundll32.exe', 'url.dll,FileProtocolHandler ' + ProxiFyreDepURL_WinpkFilter,
       '', SW_SHOW, ewNoWait, ResultCode);
   end;
 
-  if MsgBox('Open the Visual C++ Redistributable download page?' #13#10#13#10 +
-    'Download the version matching your system architecture:' #13#10 +
-    '  x64:   https://aka.ms/vc14/vc_redist.x64.exe' #13#10 +
-    '  ARM64: https://aka.ms/vc14/vc_redist.arm64.exe',
-    mbConfirmation, MB_YESNO) = IDYES then
+  Msg2 := 'Open the Visual C++ Redistributable download page?'#13#10#13#10
+    + 'Download the version matching your system architecture:'#13#10
+    + '  x64:   https://aka.ms/vc14/vc_redist.x64.exe'#13#10
+    + '  ARM64: https://aka.ms/vc14/vc_redist.arm64.exe';
+  if MsgBox(Msg2, mbConfirmation, MB_YESNO) = IDYES then
   begin
     Exec('rundll32.exe', 'url.dll,FileProtocolHandler https://aka.ms/vc14/vc_redist.x64.exe',
       '', SW_SHOW, ewNoWait, ResultCode);
   end;
 
   FirewallCmd := ExpandConstant('{app}\bin\ProxiFyre.exe');
-  MsgBox('IMPORTANT: If you plan to use ProxiFyre transparent proxy,' #13#10#13#10 +
-    'please allow ProxiFyre.exe through Windows Firewall.' #13#10#13#10 +
-    'You can configure this in:' #13#10 +
-    '  Windows Defender Firewall -> Allow an app through firewall' #13#10#13#10 +
-    'Or run as Administrator:' #13#10 +
-    '  netsh advfirewall firewall add rule name="ProxiFyre" dir=in action=allow' #13#10 +
-    '    program="' + FirewallCmd + '" enable=yes' #13#10#13#10 +
-    '  netsh advfirewall firewall add rule name="ProxiFyre" dir=out action=allow' #13#10 +
-    '    program="' + FirewallCmd + '" enable=yes',
-    mbInformation, MB_OK);
+  Msg3 := 'IMPORTANT: If you plan to use ProxiFyre transparent proxy,'#13#10#13#10
+    + 'please allow ProxiFyre.exe through Windows Firewall.'#13#10#13#10
+    + 'You can configure this in:'#13#10
+    + '  Windows Defender Firewall -> Allow an app through firewall'#13#10#13#10
+    + 'Or run as Administrator:'#13#10
+    + '  netsh advfirewall firewall add rule name="ProxiFyre" dir=in action=allow'#13#10
+    + '    program="' + FirewallCmd + '" enable=yes'#13#10#13#10
+    + '  netsh advfirewall firewall add rule name="ProxiFyre" dir=out action=allow'#13#10
+    + '    program="' + FirewallCmd + '" enable=yes';
+  MsgBox(Msg3, mbInformation, MB_OK);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
