@@ -115,11 +115,9 @@ jobs:
           Expand-Archive -Path "D:\tinytun-arm64.zip" -DestinationPath "D:\tinytun-arm64"
           Move-Item -Path "D:\tinytun-arm64\tinytun-aarch64-pc-windows-gnullvm.exe" -Destination "D:\v2raya-arm64-windows\bin\tinytun.exe"
           Move-Item -Path "D:\tinytun-arm64\wintun.dll" -Destination "D:\v2raya-arm64-windows\bin\wintun.dll"
-          ## Extract ProxiFyre to Destination Directory
-          Expand-Archive -Path "D:\proxifyre-x64.zip" -DestinationPath "D:\proxifyre-x64"
-          Move-Item -Path "D:\proxifyre-x64\ProxiFyre.exe" -Destination "D:\v2raya-x64compatible-windows\bin\ProxiFyre.exe"
-          Expand-Archive -Path "D:\proxifyre-arm64.zip" -DestinationPath "D:\proxifyre-arm64"
-          Move-Item -Path "D:\proxifyre-arm64\ProxiFyre.exe" -Destination "D:\v2raya-arm64-windows\bin\ProxiFyre.exe"
+          ## Extract all ProxiFyre files to Destination Directory
+          Expand-Archive -Path "D:\proxifyre-x64.zip" -DestinationPath "D:\v2raya-x64compatible-windows\bin" -Force
+          Expand-Archive -Path "D:\proxifyre-arm64.zip" -DestinationPath "D:\v2raya-arm64-windows\bin" -Force
           ## Download DAT files directly from Loyalsoldier release
           $DatBaseUrl = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
           $DatFiles = @("geoip.dat", "geosite.dat")
