@@ -78,6 +78,8 @@ const
   ProxiFyreDepURL_WinpkFilter = 'https://github.com/wiresock/ndisapi/releases';
   ProxiFyreDepURL_VCRedist = 'https://aka.ms/vc14/vc_redist.x64.exe';
   ProxiFyreDepURL_ProxiFyre = 'https://github.com/wiresock/proxifyre';
+  CRLF = #13#10;
+  CRLF2 = #13#10#13#10;
 
 function NeedsAddPath(Param: string): boolean;
 var
@@ -180,46 +182,44 @@ end;
 
 procedure ShowProxiFyreReminders();
 var
+  S: string;
   FirewallCmd: string;
   ResultCode: Integer;
-  Msg1: string;
-  Msg2: string;
-  Msg3: string;
 begin
-  Msg1 := 'ProxiFyre NDIS transparent proxy has been bundled with v2rayA.'#13#10#13#10
-    + 'To use it, the following dependencies are required:'#13#10#13#10
-    + '1) Windows Packet Filter (WinpkFilter) driver'#13#10
-    + '   ' + ProxiFyreDepURL_WinpkFilter + #13#10#13#10
-    + '2) Visual C++ Redistributable (x64 or ARM64):'#13#10
-    + '   ' + ProxiFyreDepURL_VCRedist#13#10#13#10
-    + 'Open the WinpkFilter download page now?';
-  if MsgBox(Msg1, mbConfirmation, MB_YESNO) = IDYES then
+  S := 'ProxiFyre NDIS transparent proxy has been bundled with v2rayA.';
+  S := S + CRLF2 + 'To use it, the following dependencies are required:';
+  S := S + CRLF2 + '1) Windows Packet Filter (WinpkFilter) driver';
+  S := S + CRLF + '   ' + ProxiFyreDepURL_WinpkFilter;
+  S := S + CRLF2 + '2) Visual C++ Redistributable (x64 or ARM64):';
+  S := S + CRLF + '   ' + ProxiFyreDepURL_VCRedist;
+  S := S + CRLF2 + 'Open the WinpkFilter download page now?';
+  if MsgBox(S, mbConfirmation, MB_YESNO) = IDYES then
   begin
     Exec('rundll32.exe', 'url.dll,FileProtocolHandler ' + ProxiFyreDepURL_WinpkFilter,
       '', SW_SHOW, ewNoWait, ResultCode);
   end;
 
-  Msg2 := 'Open the Visual C++ Redistributable download page?'#13#10#13#10
-    + 'Download the version matching your system architecture:'#13#10
-    + '  x64:   https://aka.ms/vc14/vc_redist.x64.exe'#13#10
-    + '  ARM64: https://aka.ms/vc14/vc_redist.arm64.exe';
-  if MsgBox(Msg2, mbConfirmation, MB_YESNO) = IDYES then
+  S := 'Open the Visual C++ Redistributable download page?';
+  S := S + CRLF2 + 'Download the version matching your system architecture:';
+  S := S + CRLF + '  x64:   https://aka.ms/vc14/vc_redist.x64.exe';
+  S := S + CRLF + '  ARM64: https://aka.ms/vc14/vc_redist.arm64.exe';
+  if MsgBox(S, mbConfirmation, MB_YESNO) = IDYES then
   begin
     Exec('rundll32.exe', 'url.dll,FileProtocolHandler https://aka.ms/vc14/vc_redist.x64.exe',
       '', SW_SHOW, ewNoWait, ResultCode);
   end;
 
   FirewallCmd := ExpandConstant('{app}\bin\ProxiFyre.exe');
-  Msg3 := 'IMPORTANT: If you plan to use ProxiFyre transparent proxy,'#13#10#13#10
-    + 'please allow ProxiFyre.exe through Windows Firewall.'#13#10#13#10
-    + 'You can configure this in:'#13#10
-    + '  Windows Defender Firewall -> Allow an app through firewall'#13#10#13#10
-    + 'Or run as Administrator:'#13#10
-    + '  netsh advfirewall firewall add rule name="ProxiFyre" dir=in action=allow'#13#10
-    + '    program="' + FirewallCmd + '" enable=yes'#13#10#13#10
-    + '  netsh advfirewall firewall add rule name="ProxiFyre" dir=out action=allow'#13#10
-    + '    program="' + FirewallCmd + '" enable=yes';
-  MsgBox(Msg3, mbInformation, MB_OK);
+  S := 'IMPORTANT: If you plan to use ProxiFyre transparent proxy,';
+  S := S + CRLF2 + 'please allow ProxiFyre.exe through Windows Firewall.';
+  S := S + CRLF2 + 'You can configure this in:';
+  S := S + CRLF + '  Windows Defender Firewall -> Allow an app through firewall';
+  S := S + CRLF2 + 'Or run as Administrator:';
+  S := S + CRLF + '  netsh advfirewall firewall add rule name="ProxiFyre" dir=in action=allow';
+  S := S + CRLF + '    program="' + FirewallCmd + '" enable=yes';
+  S := S + CRLF2 + '  netsh advfirewall firewall add rule name="ProxiFyre" dir=out action=allow';
+  S := S + CRLF + '    program="' + FirewallCmd + '" enable=yes';
+  MsgBox(S, mbInformation, MB_OK);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
