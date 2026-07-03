@@ -95,8 +95,32 @@ func deleteTransparentProxyRulesKeepSystemProxy() {
 		iptables.Tproxy.GetCleanCommands().Run(false)
 		iptables.Redirect.GetCleanCommands().Run(false)
 		iptables.DropSpoofing.GetCleanCommands().Run(false)
+		// 清理在 writeTransparentProxyRules 中直接添加到 nat 表 PREROUTING/OUTPUT 链的 DNS REDIRECT 规则
+		// （这些规则不属于 DNS_REDIRECT 或 DNS_MARK 等命名链，不会被上述 GetCleanCommands 清理）
+		cleanDNSDirectRedirect()
 	}
 	time.Sleep(30 * time.Millisecond)
+}
+
+// cleanDNSDirectRedirect 清理 writeTransparentProxyRules 中直接添加到 nat 表
+// PREROUTING/OUTPUT 链的 DNS REDIRECT 规则（端口 53 → 52353）。
+// 这些规则不属于 DNS_REDIRECT 或 DNS_MARK 等命名链，不会被 Tproxy/Redirect 的 GetCleanCommands 清理。
+func cleanDNSDirectRedirect() {
+	commands := `
+iptables -w 2 -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-port 52353 2>/dev/null || true
+iptables -w 2 -t nat -D PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 52353 2>/dev/null || true
+iptables -w 2 -t nat -D OUTPUT -p udp --dport 53 -j REDIRECT --to-port 52353 2>/dev/null || true
+iptables -w 2 -t nat -D OUTPUT -p tcp --dport 53 -j REDIRECT --to-port 52353 2>/dev/null || true
+`
+	if iptables.IsIPv6Supported() {
+		commands += `
+ip6tables -w 2 -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-port 52353 2>/dev/null || true
+ip6tables -w 2 -t nat -D PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 52353 2>/dev/null || true
+ip6tables -w 2 -t nat -D OUTPUT -p udp --dport 53 -j REDIRECT --to-port 52353 2>/dev/null || true
+ip6tables -w 2 -t nat -D OUTPUT -p tcp --dport 53 -j REDIRECT --to-port 52353 2>/dev/null || true
+`
+	}
+	cmds.ExecCommands(commands, false)
 }
 
 func deleteTransparentProxyRules() {
